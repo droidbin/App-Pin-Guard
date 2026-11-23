@@ -87,6 +87,7 @@ internal sealed class StatusWriter
             {
                 document.UpdatedAtUtc = DateTime.UtcNow.ToString("o");
                 PolicyStore.WriteAtomic(WapPaths.StatusFile, document);
+                SecureLayout.ShareRuntimeFile(WapPaths.StatusFile);
             }
         }
         catch (Exception ex)

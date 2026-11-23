@@ -136,6 +136,18 @@ public sealed class GateSpoolTests
         Assert.Equal(77, GateRequest.Parse(request.Serialize())!.Child);
     }
 
+    [Fact]
+    public void Unlock_Request_Carries_The_Target_Pid()
+    {
+        var request = new GateRequest { Op = GateSpool.OpUnlock, Pid = 10, Path = @"C:\Chrome\chrome.exe", Child = 321 };
+
+        var parsed = GateRequest.Parse(request.Serialize());
+
+        Assert.NotNull(parsed);
+        Assert.Equal(GateSpool.OpUnlock, parsed!.Op);
+        Assert.Equal(321, parsed.Child);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("garbage")]

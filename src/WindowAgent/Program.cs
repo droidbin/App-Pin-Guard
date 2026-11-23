@@ -43,6 +43,8 @@ internal sealed class WindowAgent
     private string lastPolicyText;
     private int hiddenSinceSummary, restoredSinceSummary;
     private DateTime nextSummary = DateTime.UtcNow.AddMinutes(1);
+    private Process unlockPrompt;
+    private DateTime nextPrompt = DateTime.MinValue;
 
     private struct ProcessInfo
     {
@@ -215,12 +217,39 @@ internal sealed class WindowAgent
                     catch (IOException) { hidden.Remove(window); return true; }
                     catch (UnauthorizedAccessException) { hidden.Remove(window); return true; }
                     hiddenSinceSummary++;
+                    PromptUnlock(identity.Pid);
                 }
                 ShowWindowAsync(window, 0);
             }
             catch (Exception) { /* The window or process may disappear while enumerating. */ }
             return true;
         }, IntPtr.Zero);
+    }
+
+    // A newly hidden window of a window-mode Win32 app (browser): ask for the PIN through Gate. One prompt at a time.
+    private void PromptUnlock(uint pid)
+    {
+        ProcessInfo info;
+        if (!processes.TryGetValue(pid, out info) || info.Path == null || !hidePaths.Contains(info.Path)) return;
+        try
+        {
+            if (unlockPrompt != null)
+            {
+                bool running = !unlockPrompt.HasExited;
+                if (running) return;
+                unlockPrompt.Dispose();
+                unlockPrompt = null;
+            }
+            if (DateTime.UtcNow < nextPrompt) return;
+            string gate = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, WapPaths.GateExeName);
+            if (!File.Exists(gate)) return;
+            nextPrompt = DateTime.UtcNow.AddSeconds(2);
+            unlockPrompt = Process.Start(new ProcessStartInfo(gate,
+                "--unlock " + pid.ToString(CultureInfo.InvariantCulture) + " \"" + info.Path + "\"") { UseShellExecute = false });
+            AgentLog.Info("agent.unlock.prompt", "pid=" + pid);
+        }
+        catch (System.ComponentModel.Win32Exception ex) { AgentLog.Exception("agent.unlock.failed", ex); }
+        catch (InvalidOperationException ex) { AgentLog.Exception("agent.unlock.failed", ex); }
     }
 
     // Restores windows whose process no longer needs hiding (the app was unlocked or the policy changed).

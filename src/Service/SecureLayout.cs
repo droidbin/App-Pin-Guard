@@ -23,6 +23,11 @@ internal static class SecureLayout
         foreach (string file in new[] { WapPaths.PolicyFile, WapPaths.SecretsFile, WapPaths.UiSettingsFile })
             if (File.Exists(file)) ProtectFile(file);
 
+        // Files left by an older build keep their old, SYSTEM-only ACL (File.Replace preserves it), which hides
+        // them from the agent. Reset them so every user can read them.
+        foreach (string file in new[] { WapPaths.EnforcementFile, WapPaths.StatusFile })
+            if (File.Exists(file)) ShareRuntimeFile(file);
+
         RemoveLegacy();
     }
 
@@ -65,6 +70,23 @@ internal static class SecureLayout
         var security = NewProtectedSecurity();
         if (extra != null) security.AddAccessRule(extra);
         new DirectoryInfo(path).SetAccessControl(security);
+    }
+
+    // Runtime\enforcement.txt and status.json: written by the service, readable by everyone. Applied explicitly
+    // after every write because File.Replace keeps the ACL of the file it replaces.
+    internal static void ShareRuntimeFile(string path)
+    {
+        try
+        {
+            var security = new FileSecurity();
+            security.SetAccessRuleProtection(true, false);
+            security.AddAccessRule(new FileSystemAccessRule(WapSecurity.SystemSid, FileSystemRights.FullControl, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(WapSecurity.AdminsSid, FileSystemRights.FullControl, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(WapSecurity.UsersSid, FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize, AccessControlType.Allow));
+            new FileInfo(path).SetAccessControl(security);
+        }
+        catch (IOException ex) { ServiceLog.Exception("layout.share.failed", ex); }
+        catch (UnauthorizedAccessException ex) { ServiceLog.Exception("layout.share.failed", ex); }
     }
 
     // policy.json, secrets.json and ui.json: SYSTEM and Administrators only.

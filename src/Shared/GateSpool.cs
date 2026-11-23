@@ -13,6 +13,7 @@ internal static class GateSpool
     internal const string Magic = "WAP-GATE 1";
     internal const string OpAuthorize = "authorize";
     internal const string OpTrack = "track";
+    internal const string OpUnlock = "unlock";
     internal const string ResultApproved = "approved";
     internal const string ResultDenied = "denied";
     internal const string ResultPrompt = "prompt";
@@ -144,7 +145,7 @@ internal sealed class GateRequest
         text.Append("pid=").Append(Pid.ToString(CultureInfo.InvariantCulture)).Append('\n');
         text.Append("path=").Append(GateSpool.EncodeText(Path)).Append('\n');
         text.Append("pin=").Append(GateSpool.EncodeText(Pin)).Append('\n');
-        if (Op == GateSpool.OpTrack) text.Append("child=").Append(Child.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        if (Op == GateSpool.OpTrack || Op == GateSpool.OpUnlock) text.Append("child=").Append(Child.ToString(CultureInfo.InvariantCulture)).Append('\n');
         return text.ToString();
     }
 
@@ -159,14 +160,14 @@ internal sealed class GateRequest
             string op, nonce, pid, path, pin, child;
             if (!fields.TryGetValue("op", out op) || !fields.TryGetValue("nonce", out nonce) ||
                 !fields.TryGetValue("pid", out pid) || !fields.TryGetValue("path", out path)) return null;
-            if (op != GateSpool.OpAuthorize && op != GateSpool.OpTrack) return null;
+            if (op != GateSpool.OpAuthorize && op != GateSpool.OpTrack && op != GateSpool.OpUnlock) return null;
             if (!GateSpool.IsValidNonce(nonce)) return null;
             var request = new GateRequest { Op = op, Nonce = nonce };
             if (!int.TryParse(pid, NumberStyles.None, CultureInfo.InvariantCulture, out request.Pid) || request.Pid <= 0)
                 return null;
             request.Path = GateSpool.DecodeText(path);
             if (fields.TryGetValue("pin", out pin)) request.Pin = GateSpool.DecodeText(pin);
-            if (op == GateSpool.OpTrack)
+            if (op == GateSpool.OpTrack || op == GateSpool.OpUnlock)
             {
                 if (!fields.TryGetValue("child", out child) ||
                     !int.TryParse(child, NumberStyles.None, CultureInfo.InvariantCulture, out request.Child) ||

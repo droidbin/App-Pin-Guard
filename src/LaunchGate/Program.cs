@@ -40,6 +40,10 @@ internal static class Gate
             return 1;
         }
 
+        // Started by the window agent when it hid a window of a window-mode app (browser): ask for the PIN and,
+        // when the service approves, have it release that running process.
+        if (args.Length >= 3 && args[0] == "--unlock") return Unlock(args[1], args[2]);
+
         if (args.Length < 2 || args[0] != "--launch") return 1;
         try
         {
@@ -71,6 +75,41 @@ internal static class Gate
         {
             GateLog.Exception("gate.launch.failed", ex);
             ShowError("보호 앱을 실행할 수 없습니다.\n" + ex.Message);
+            return 1;
+        }
+    }
+
+    private static int Unlock(string pidText, string appPath)
+    {
+        try
+        {
+            int target;
+            if (!int.TryParse(pidText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out target) ||
+                target <= 0 || !Path.IsPathRooted(appPath)) return 1;
+            string path = Path.GetFullPath(appPath);
+            GateLog.Info("gate.unlock.requested", "app=" + System.IO.Path.GetFileName(path), "pid=" + target);
+            GateResponse response = Authorize(path, string.Empty);
+            if (response.Result == GateSpool.ResultPrompt)
+            {
+                string pin = Prompt(path);
+                if (string.IsNullOrWhiteSpace(pin)) return 1;
+                response = Authorize(path, pin);
+            }
+            if (response.Result == GateSpool.ResultApproved)
+                response = Exchange(new GateRequest { Op = GateSpool.OpUnlock, Pid = Process.GetCurrentProcess().Id, Path = path, Child = target });
+            if (response.Result != GateSpool.ResultApproved)
+            {
+                GateLog.Info("gate.unlock.refused", "result=" + response.Result);
+                ShowError(DescribeRefusal(response));
+                return 1;
+            }
+            GateLog.Info("gate.unlock.approved", "pid=" + target);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            GateLog.Exception("gate.unlock.failed", ex);
+            ShowError("앱을 열 수 없습니다.\n" + ex.Message);
             return 1;
         }
     }

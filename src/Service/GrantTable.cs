@@ -71,7 +71,8 @@ internal sealed class GrantTable
         lock (sync)
         {
             ExpireLocked(utcNow);
-            if (!policy.EnableLaunchGate || app == null || !app.Locked || !PolicyRules.CanUseGate(app)) return AuthResult.Denied;
+            if (!policy.EnableLaunchGate || app == null || !app.Locked ||
+                !(PolicyRules.CanUseGate(app) || PolicyRules.CanUseWindowUnlock(app))) return AuthResult.Denied;
 
             PinRecord record = DefaultOrOwnPin(secrets, app);
             int minutes = Math.Max(0, Math.Min(app.Launch.AllowedMinutes, 1440));

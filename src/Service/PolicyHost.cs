@@ -251,6 +251,7 @@ internal sealed class PolicyHost : IDisposable
                 File.WriteAllText(temporary, text, new UTF8Encoding(false));
                 if (File.Exists(WapPaths.EnforcementFile)) File.Replace(temporary, WapPaths.EnforcementFile, null);
                 else File.Move(temporary, WapPaths.EnforcementFile);
+                SecureLayout.ShareRuntimeFile(WapPaths.EnforcementFile);
             }
             finally
             {

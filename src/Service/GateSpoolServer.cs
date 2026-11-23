@@ -185,6 +185,23 @@ internal sealed class GateSpoolServer : IDisposable
         if (app == null || !app.Locked) return GateSpool.ResultDenied;
 
         DateTime now = DateTime.UtcNow;
+        if (request.Op == GateSpool.OpUnlock)
+        {
+            // Gate was just approved for this window-mode app (browser) and now names the running process to show.
+            int target = request.Child;
+            long startTicks = NativeApi.GetStartTicks(target);
+            string targetImage = NativeApi.GetImagePath(target);
+            if (!PolicyRules.CanUseWindowUnlock(app) || startTicks == 0 || targetImage == null ||
+                !PolicyRules.PathsEqual(targetImage, app.Path) || NativeApi.GetSessionId(target) != session ||
+                !string.Equals(NativeApi.GetUserSid(target), userSid, StringComparison.OrdinalIgnoreCase) ||
+                !grants.IsApprovedGateChild(request.Pid, app.Id, now))
+                return GateSpool.ResultDenied;
+            grants.RegisterProcess(target, startTicks, app.Id);
+            ServiceLog.Info("gate.unlock", "app=" + app.Name, "pid=" + target);
+            policyHost.RequestApply();
+            return GateSpool.ResultApproved;
+        }
+
         if (request.Op == GateSpool.OpTrack)
         {
             bool tracked = grants.Track(app, userSid, session, request.Pid, request.Child, now);

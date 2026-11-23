@@ -53,6 +53,14 @@ internal static class PolicyRules
             string.Equals(Path.GetExtension(app.Path), ".exe", StringComparison.OrdinalIgnoreCase);
     }
 
+    // A window-mode app (browser) that is a plain Win32 .exe can be unlocked per process with a PIN prompt.
+    internal static bool CanUseWindowUnlock(AppPolicy app)
+    {
+        return app != null && !app.IsPackaged && IsWindowMode(app) && !string.IsNullOrWhiteSpace(app.Path) &&
+            Path.IsPathRooted(app.Path) &&
+            string.Equals(Path.GetExtension(app.Path), ".exe", StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static bool IsWithinLockHours(LaunchPolicy launch, DateTime localTime)
     {
         if (launch == null) return true;
@@ -103,7 +111,7 @@ internal static class PolicyRules
         if (policy == null || policy.Apps == null) return null;
         foreach (AppPolicy app in policy.Apps)
         {
-            if (app == null || !CanUseGate(app)) continue;
+            if (app == null || !(CanUseGate(app) || CanUseWindowUnlock(app))) continue;
             if (PathsEqual(app.Path, path)) return app;
         }
         return null;
