@@ -409,6 +409,8 @@ internal sealed class ProtectionWorker : IDisposable
             Path.IsPathRooted(app.Path) && string.Equals(Path.GetExtension(app.Path), ".exe", StringComparison.OrdinalIgnoreCase);
     }
 
+    private readonly Dictionary<string, string> loggedRuleStates = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     private void SyncRules(IEnumerable<ProtectedApp> apps, bool enableLaunchGate)
     {
         if (!File.Exists(uiPath))
@@ -454,6 +456,14 @@ internal sealed class ProtectionWorker : IDisposable
                             continue;
 
                         bool useGate = enableLaunchGate && entry.Value.All(CanUseGate);
+                        string ruleState = entry.Key + " gate=" + enableLaunchGate + " canUse=" +
+                            string.Join("/", entry.Value.Select(CanUseGate)) + " -> " + (useGate ? "gate" : "blocked");
+                        string previousState;
+                        if (!loggedRuleStates.TryGetValue(entry.Key, out previousState) || previousState != ruleState)
+                        {
+                            loggedRuleStates[entry.Key] = ruleState;
+                            LaunchAuthorizationServer.WriteServiceLog("rule " + ruleState);
+                        }
                         key.SetValue(MarkerName, "1", RegistryValueKind.String);
                         if (useGate)
                         {
@@ -475,7 +485,9 @@ internal sealed class ProtectionWorker : IDisposable
                         }
                         else
                         {
-                            key.SetValue("Debugger", "\"" + uiPath + "\" --blocked", RegistryValueKind.String);
+                            // Gate is non-elevated; the UI exe requires admin and fails with error 740 from Explorer.
+                            string blocker = File.Exists(gatePath) ? gatePath : uiPath;
+                            key.SetValue("Debugger", "\"" + blocker + "\" --blocked", RegistryValueKind.String);
                             key.DeleteValue("UseFilter", false);
                             DeleteManagedFilters(key, Enumerable.Empty<string>());
                         }

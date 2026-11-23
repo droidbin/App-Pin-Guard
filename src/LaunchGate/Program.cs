@@ -13,6 +13,13 @@ internal static class Gate
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length >= 1 && args[0] == "--blocked")
+        {
+            // IFEO fallback rule: this exe runs without elevation, so the block message always shows.
+            ShowError("보호 정책에 따라 이 앱의 실행이 차단되었습니다.");
+            return 1;
+        }
+
         if (args.Length < 2 || args[0] != "--launch") return 1;
         try
         {

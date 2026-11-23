@@ -449,6 +449,25 @@
         <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
     </Style>
 
+    <!-- 드롭다운 화살표(셰브론): 어두운 버튼 위에서 항상 보이도록 전경색을 강제하고, 기본 버튼과 구분선을 둔다. -->
+    <Style Selector="SplitButton.Primary /template/ Button#PART_SecondaryButton">
+        <Setter Property="MinWidth" Value="34" />
+        <Setter Property="BorderThickness" Value="1,0,0,0" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+    <Style Selector="SplitButton.Primary /template/ Button#PART_SecondaryButton PathIcon">
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+        <Setter Property="Width" Value="14" />
+        <Setter Property="Height" Value="14" />
+    </Style>
+    <Style Selector="SplitButton.Primary /template/ Button#PART_SecondaryButton Path">
+        <Setter Property="Fill" Value="{DynamicResource InkOnAccentBrush}" />
+        <Setter Property="Stroke" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+    <Style Selector="SplitButton.Primary /template/ Button#PART_SecondaryButton TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
     <Style Selector="SplitButton.Primary /template/ Button#PART_PrimaryButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource InkHoverBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource InkHoverBrush}" />

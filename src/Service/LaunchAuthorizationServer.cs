@@ -192,7 +192,7 @@ internal sealed class LaunchAuthorizationServer : IDisposable
         WriteServiceLog("SyncPolicy rejected, reply=" + reply);
     }
 
-    private static void WriteServiceLog(string message)
+    internal static void WriteServiceLog(string message)
     {
         try
         {
