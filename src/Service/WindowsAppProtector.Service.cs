@@ -185,6 +185,7 @@ internal sealed class ProtectionWorker : IDisposable
 
             var protectedApps = config.ProtectedApps ?? new List<ProtectedApp>();
             SyncRules(protectedApps, config.EnableLaunchGate && File.Exists(gatePath));
+            PublishWindowPolicyFile();
         }
         catch (Exception ex)
         {
@@ -224,6 +225,54 @@ internal sealed class ProtectionWorker : IDisposable
             if (seen.Add(line)) policy.Append('\n').Append(line);
         }
         return policy.ToString();
+    }
+
+    private string publishedWindowPolicy;
+
+    // The named pipe is unreachable for the session agent on some systems, so the policy is also published
+    // as a file only SYSTEM/Administrators can write; the agent verifies the file owner before trusting it.
+    private void PublishWindowPolicyFile()
+    {
+        string policy = ReadWindowPolicy();
+        if (string.IsNullOrEmpty(policy)) return;
+        string directory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Windows App Protector", "Policy");
+        string file = Path.Combine(directory, "window-policy.txt");
+        if (policy == publishedWindowPolicy && File.Exists(file)) return;
+
+        var security = new System.Security.AccessControl.DirectorySecurity();
+        security.SetAccessRuleProtection(true, false);
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+        var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+        var inherit = System.Security.AccessControl.InheritanceFlags.ContainerInherit |
+            System.Security.AccessControl.InheritanceFlags.ObjectInherit;
+        security.SetOwner(system);
+        security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(system,
+            System.Security.AccessControl.FileSystemRights.FullControl, inherit,
+            System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
+        security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(admins,
+            System.Security.AccessControl.FileSystemRights.FullControl, inherit,
+            System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
+        security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(users,
+            System.Security.AccessControl.FileSystemRights.ReadAndExecute, inherit,
+            System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
+        Directory.CreateDirectory(directory);
+        new DirectoryInfo(directory).SetAccessControl(security);
+
+        string temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, policy, new UTF8Encoding(false));
+            if (File.Exists(file)) File.Replace(temporary, file, null);
+            else File.Move(temporary, file);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+        publishedWindowPolicy = policy;
     }
 
     private byte ResyncPolicy()

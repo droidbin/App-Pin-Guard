@@ -95,6 +95,38 @@ internal sealed class WindowAgent
 
     private bool RefreshPolicy(Guid generation)
     {
+        string filePolicy = ReadPolicyFile();
+        if (filePolicy != null)
+        {
+            // A file left by a previous service run carries an old generation: wait for the fresh one.
+            if (!filePolicy.StartsWith(generation.ToString("N"), StringComparison.Ordinal)) return true;
+            return ApplyPolicy(filePolicy, generation);
+        }
+        try { return RefreshPolicyFromPipe(generation); }
+        catch (System.ComponentModel.Win32Exception) { return true; }
+    }
+
+    private static string ReadPolicyFile()
+    {
+        try
+        {
+            string file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "Windows App Protector", "Policy", "window-policy.txt");
+            if (!File.Exists(file)) return null;
+            var owner = File.GetAccessControl(file).GetOwner(typeof(System.Security.Principal.SecurityIdentifier));
+            var system = new System.Security.Principal.SecurityIdentifier(
+                System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
+            var admins = new System.Security.Principal.SecurityIdentifier(
+                System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid, null);
+            if (!owner.Equals(system) && !owner.Equals(admins)) return null;
+            return File.ReadAllText(file, Encoding.UTF8);
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    private bool RefreshPolicyFromPipe(Guid generation)
+    {
         using (var pipe = GateProtocol.ConnectToService())
         {
             pipe.WriteByte(GateProtocol.Version);
