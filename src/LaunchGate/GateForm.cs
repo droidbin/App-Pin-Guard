@@ -23,6 +23,7 @@ internal sealed class GateForm : Form
     private readonly bool _ownsAppIcon;
     private PrivateFontCollection _fontCollection;
     private FontFamily _fontFamily;
+    private FontFamily _boldFontFamily;
     private readonly Font _titleFont;
     private readonly Font _subtitleFont;
     private readonly Font _buttonFont;
@@ -214,21 +215,33 @@ internal sealed class GateForm : Form
     {
         try
         {
-            string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PretendardVariable.ttf");
-            if (!File.Exists(fontPath))
+            string regularPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Pretendard-Regular.otf");
+            string semiBoldPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Pretendard-SemiBold.otf");
+            if (!File.Exists(regularPath))
             {
                 return;
             }
 
             var collection = new PrivateFontCollection();
-            collection.AddFontFile(fontPath);
-            if (collection.Families.Length > 0)
+            collection.AddFontFile(regularPath);
+            if (File.Exists(semiBoldPath))
+            {
+                collection.AddFontFile(semiBoldPath);
+            }
+
+            foreach (FontFamily family in collection.Families)
+            {
+                if (family.Name == "Pretendard") _fontFamily = family;
+                else if (family.Name == "Pretendard SemiBold") _boldFontFamily = family;
+            }
+
+            if (_fontFamily != null)
             {
                 _fontCollection = collection;
-                _fontFamily = collection.Families[0];
             }
             else
             {
+                _boldFontFamily = null;
                 collection.Dispose();
             }
         }
@@ -243,8 +256,12 @@ internal sealed class GateForm : Form
         {
             try
             {
-                FontStyle effectiveStyle = _fontFamily.IsStyleAvailable(style) ? style : FontStyle.Regular;
-                return new Font(_fontFamily, pixelSize, effectiveStyle, GraphicsUnit.Pixel);
+                if ((style & FontStyle.Bold) != 0 && _boldFontFamily != null)
+                {
+                    return new Font(_boldFontFamily, pixelSize, FontStyle.Regular, GraphicsUnit.Pixel);
+                }
+
+                return new Font(_fontFamily, pixelSize, FontStyle.Regular, GraphicsUnit.Pixel);
             }
             catch
             {

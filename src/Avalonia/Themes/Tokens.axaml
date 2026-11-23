@@ -2,8 +2,8 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- 글꼴 -->
-    <FontFamily x:Key="AppFontFamily">avares://WindowsAppProtector.WinUI/Assets/Fonts/PretendardVariable.ttf#Pretendard Variable, Malgun Gothic</FontFamily>
-    <FontFamily x:Key="ContentControlThemeFontFamily">avares://WindowsAppProtector.WinUI/Assets/Fonts/PretendardVariable.ttf#Pretendard Variable, Malgun Gothic</FontFamily>
+    <FontFamily x:Key="AppFontFamily">avares://WindowsAppProtector.WinUI/Assets/Fonts#Pretendard, Malgun Gothic</FontFamily>
+    <FontFamily x:Key="ContentControlThemeFontFamily">avares://WindowsAppProtector.WinUI/Assets/Fonts#Pretendard, Malgun Gothic</FontFamily>
 
     <!-- 글꼴 크기 / 줄간격 (5절) -->
     <x:Double x:Key="FontSizePageTitle">28</x:Double>

@@ -46,7 +46,7 @@ $gateThemeSource = Join-Path $root "src\LaunchGate\GateTheme.cs"
 $gateFormSource = Join-Path $root "src\LaunchGate\GateForm.cs"
 $gateProtocol = Join-Path $root "src\LaunchGate\GateProtocol.cs"
 $gateManifest = Join-Path $root "src\LaunchGate\app.manifest"
-$gateFont = Join-Path $root "src\Avalonia\Assets\Fonts\PretendardVariable.ttf"
+$gateFontDir = Join-Path $root "src\Avalonia\Assets\Fonts"
 $serviceBuildDir = Join-Path $root "build\service"
 $serviceExe = Join-Path $serviceBuildDir "WindowsAppProtector.Service.exe"
 $buildDir = Join-Path $root "build\installer"
@@ -87,10 +87,13 @@ $gateExe = Join-Path $payloadDir "WindowsAppProtector.Gate.exe"
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
-if (!(Test-Path -LiteralPath $gateFont)) {
-    throw "Gate font not found: $gateFont"
+foreach ($fontName in @("Pretendard-Regular.otf", "Pretendard-SemiBold.otf")) {
+    $fontSource = Join-Path $gateFontDir $fontName
+    if (!(Test-Path -LiteralPath $fontSource)) {
+        throw "Gate font not found: $fontSource"
+    }
+    Copy-Item -LiteralPath $fontSource -Destination (Join-Path $payloadDir $fontName) -Force
 }
-Copy-Item -LiteralPath $gateFont -Destination (Join-Path $payloadDir "PretendardVariable.ttf") -Force
 $agentExe = Join-Path $payloadDir "WindowsAppProtector.WindowAgent.exe"
 & $csc /nologo /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /out:$agentExe $agentSource $gateProtocol
 if ($LASTEXITCODE -ne 0) {

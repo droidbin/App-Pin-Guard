@@ -72,6 +72,12 @@ internal sealed class LaunchAuthorizationServer : IDisposable
         acl.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.InteractiveSid, null),
             PipeAccessRights.ReadData | PipeAccessRights.WriteData | PipeAccessRights.ReadPermissions |
                 PipeAccessRights.Synchronize, AccessControlType.Allow));
+        // Authenticated users too: the exe-path check in Handle() is the real gate, not this ACL.
+        acl.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            PipeAccessRights.ReadData | PipeAccessRights.WriteData | PipeAccessRights.ReadPermissions |
+                PipeAccessRights.Synchronize, AccessControlType.Allow));
+        bool loggedAcl = false;
+        bool loggedListenError = false;
 
         while (!stopping)
         {
@@ -85,14 +91,24 @@ internal sealed class LaunchAuthorizationServer : IDisposable
                         if (stopping) return;
                         listener = pipe;
                     }
+                    if (!loggedAcl)
+                    {
+                        loggedAcl = true;
+                        try { WriteServiceLog("pipe created, " + pipe.GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All)); }
+                        catch (Exception ex) { WriteServiceLog("pipe created, sddl unavailable: " + ex.Message); }
+                    }
                     pipe.EndWaitForConnection(pipe.BeginWaitForConnection(null, null));
                     Handle(pipe);
                     lock (lifecycle) listener = null;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                if (!stopping) Thread.Sleep(150);
+                if (!stopping)
+                {
+                    if (!loggedListenError) { loggedListenError = true; WriteServiceLog("pipe listen failed: " + ex); }
+                    Thread.Sleep(150);
+                }
             }
         }
     }
@@ -173,6 +189,11 @@ internal sealed class LaunchAuthorizationServer : IDisposable
 
     private static void LogSyncRejection(byte reply)
     {
+        WriteServiceLog("SyncPolicy rejected, reply=" + reply);
+    }
+
+    private static void WriteServiceLog(string message)
+    {
         try
         {
             string directory = Path.Combine(
@@ -180,7 +201,7 @@ internal sealed class LaunchAuthorizationServer : IDisposable
                 "Windows App Protector", "Logs");
             Directory.CreateDirectory(directory);
             File.AppendAllText(Path.Combine(directory, "service.log"),
-                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " SyncPolicy rejected, reply=" + reply + "\r\n");
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + message + Environment.NewLine);
         }
         catch (Exception)
         {
