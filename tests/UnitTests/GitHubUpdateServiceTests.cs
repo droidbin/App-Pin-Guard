@@ -20,6 +20,20 @@ public sealed class GitHubUpdateServiceTests
     }
 
     [Theory]
+    [InlineData("v2.0.0-beta.7", "v2.0.0-beta.6", 1)]
+    [InlineData("v2.0.0", "v2.0.0-beta.9", 1)]
+    [InlineData("v2.0.1-beta.1", "v2.0.0", 1)]
+    [InlineData("v2.0.0-beta.6+abc", "v2.0.0-beta.6", 0)]
+    [InlineData("v2.0.0-beta.5", "v2.0.0-beta.6", -1)]
+    public void CompareRank_Orders_Beta_And_Stable(string left, string right, int expectedSign)
+    {
+        Assert.True(GitHubUpdateService.TryParseRank(left, out var leftRank));
+        Assert.True(GitHubUpdateService.TryParseRank(right, out var rightRank));
+
+        Assert.Equal(expectedSign, Math.Sign(GitHubUpdateService.CompareRank(leftRank, rightRank)));
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("v")]

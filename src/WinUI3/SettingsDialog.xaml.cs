@@ -49,6 +49,16 @@ public sealed class SettingsWindow : Window
         OnContent = "켜짐",
         OffContent = "꺼짐",
     };
+    private readonly RadioButton stableChannelRadio = new()
+    {
+        Content = "정식 채널",
+        GroupName = "UpdateChannel",
+    };
+    private readonly RadioButton betaChannelRadio = new()
+    {
+        Content = "베타 채널",
+        GroupName = "UpdateChannel",
+    };
     private readonly TextBox idleLockMinutesBox = new()
     {
         Header = "\uC720\uD734 \uC2DC \uC790\uB3D9 \uC7A0\uAE08(\uBD84)",
@@ -162,6 +172,20 @@ public sealed class SettingsWindow : Window
             Foreground = Brush(0xA5, 0x21, 0x2B),
             TextWrapping = TextWrapping.Wrap,
         });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "업데이트 채널",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
+        panel.Children.Add(stableChannelRadio);
+        panel.Children.Add(betaChannelRadio);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "정식: 검증된 릴리스만 받습니다. 베타: 사전 릴리스(예: 2.0.0-beta.N)까지 받으며 불안정할 수 있습니다.",
+            FontSize = 12,
+            Foreground = Brush(0x6B, 0x72, 0x80),
+            TextWrapping = TextWrapping.Wrap,
+        });
         panel.Children.Add(idleLockMinutesBox);
         var changePinButton = new Button { Content = "PIN 변경" };
         changePinButton.Click += async (_, _) =>
@@ -209,6 +233,9 @@ public sealed class SettingsWindow : Window
     private void LoadPreferenceValues()
     {
         launchGateSwitch.IsOn = ViewModel.EnableLaunchGate;
+        var isBeta = ViewModel.UpdateChannel == GitHubUpdateService.BetaChannel;
+        betaChannelRadio.IsChecked = isBeta;
+        stableChannelRadio.IsChecked = !isBeta;
         closeToBackgroundSwitch.IsOn = ViewModel.CloseToBackground;
         startWithWindowsSwitch.IsOn = ViewModel.StartWithWindows;
         closeAppsOnLockSwitch.IsOn = ViewModel.CloseAppsOnLock;
@@ -332,7 +359,10 @@ public sealed class SettingsWindow : Window
                 : ViewModel.IdleLockMinutes;
 
             if (await ViewModel.SavePreferencesAsync(closeToBackgroundSwitch.IsOn, closeAppsOnLockSwitch.IsOn,
-                startWithWindowsSwitch.IsOn, idleLockMinutes, launchGateSwitch.IsOn))
+                startWithWindowsSwitch.IsOn, idleLockMinutes, launchGateSwitch.IsOn,
+                betaChannelRadio.IsChecked == true
+                    ? GitHubUpdateService.BetaChannel
+                    : GitHubUpdateService.StableChannel))
             {
                 Close();
             }

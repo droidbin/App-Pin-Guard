@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WindowsAppProtector.Models;
 using WindowsAppProtector.Services;
@@ -135,6 +136,22 @@ public class MainViewModel : ObservableObject
 
     public bool EnableLaunchGate => config.EnableLaunchGate;
 
+    public string UpdateChannel
+    {
+        get
+        {
+            if (string.Equals(config.UpdateChannel, GitHubUpdateService.BetaChannel, StringComparison.OrdinalIgnoreCase))
+                return GitHubUpdateService.BetaChannel;
+            if (string.Equals(config.UpdateChannel, GitHubUpdateService.StableChannel, StringComparison.OrdinalIgnoreCase))
+                return GitHubUpdateService.StableChannel;
+            var informational = System.Reflection.Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            return informational?.Contains('-') == true
+                ? GitHubUpdateService.BetaChannel
+                : GitHubUpdateService.StableChannel;
+        }
+    }
+
     internal (bool CustomPin, int Minutes, int? Start, int? End, bool RelockOnExit)? GetLaunchPolicy(ProtectedAppViewModel? item)
     {
         var app = item is null ? null : FindModel(item);
@@ -205,6 +222,7 @@ public class MainViewModel : ObservableObject
         config.CloseAppsOnLock = loaded.CloseAppsOnLock;
         config.StartWithWindows = loaded.StartWithWindows;
         config.EnableLaunchGate = loaded.EnableLaunchGate;
+        config.UpdateChannel = loaded.UpdateChannel;
         config.IdleLockMinutes = loaded.IdleLockMinutes;
         config.UnlockMinutes = loaded.UnlockMinutes;
         config.UnlockUntil = null;
@@ -439,10 +457,11 @@ public class MainViewModel : ObservableObject
     }
 
     public async Task<bool> SavePreferencesAsync(bool closeToBackground, bool closeAppsOnLock,
-        bool startWithWindows, int idleLockMinutes, bool enableLaunchGate)
+        bool startWithWindows, int idleLockMinutes, bool enableLaunchGate, string updateChannel)
     {
         try
         {
+            config.UpdateChannel = updateChannel;
             StartupService.SetEnabled(startWithWindows);
             CloseToBackground = closeToBackground;
             CloseAppsOnLock = closeAppsOnLock;

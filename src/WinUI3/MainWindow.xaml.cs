@@ -1144,7 +1144,7 @@ public sealed class MainWindow : Window
                 ViewModel.StatusText = "\uC5C5\uB370\uC774\uD2B8\uB97C \uD655\uC778\uD558\uB294 \uC911\uC785\uB2C8\uB2E4.";
             }
 
-            var result = await updateService.CheckForUpdateAsync();
+            var result = await updateService.CheckForUpdateAsync(ViewModel.UpdateChannel);
             if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
             {
                 if (showNoUpdateMessage)

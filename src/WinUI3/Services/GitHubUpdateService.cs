@@ -18,7 +18,109 @@ public sealed class GitHubUpdateService
     public Version CurrentVersion =>
         Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0, 0);
 
-    public async Task<UpdateCheckResult> CheckForUpdateAsync(CancellationToken cancellationToken = default)
+    public const string StableChannel = "stable";
+    public const string BetaChannel = "beta";
+
+    private const string ListUrl = "https://api.github.com/repos/" + Owner + "/" + Repository + "/releases?per_page=30";
+
+    public async Task<UpdateCheckResult> CheckForUpdateAsync(
+        string channel = StableChannel, CancellationToken cancellationToken = default)
+    {
+        return string.Equals(channel, BetaChannel, StringComparison.OrdinalIgnoreCase)
+            ? await CheckBetaChannelAsync(cancellationToken)
+            : await CheckStableChannelAsync(cancellationToken);
+    }
+
+    private async Task<UpdateCheckResult> CheckBetaChannelAsync(CancellationToken cancellationToken)
+    {
+        using var response = await HttpClient.GetAsync(ListUrl, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return UpdateCheckResult.Failed(
+                $"GitHub 릴리즈 정보를 확인할 수 없습니다. ({(int)response.StatusCode})");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return UpdateCheckResult.Failed("GitHub 릴리즈 목록을 해석할 수 없습니다.");
+        }
+
+        GitHubReleaseInfo? best = null;
+        var bestRank = (Version: new Version(0, 0, 0, 0), Pre: -1);
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            if (item.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True)
+            {
+                continue;
+            }
+
+            var tag = GetString(item, "tag_name");
+            if (!TryParseRank(tag, out var rank) || FindInstallerAsset(item) is not { } asset)
+            {
+                continue;
+            }
+
+            if (best is null || CompareRank(rank, bestRank) > 0)
+            {
+                best = new GitHubReleaseInfo(rank.Version, tag, GetString(item, "name"),
+                    GetString(item, "html_url"), asset.Name, asset.DownloadUrl, asset.Sha256);
+                bestRank = rank;
+            }
+        }
+
+        if (best is null)
+        {
+            return UpdateCheckResult.Failed("설치 가능한 릴리즈를 찾을 수 없습니다.");
+        }
+
+        var informational = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? string.Empty;
+        var current = TryParseRank(informational, out var currentRank)
+            ? currentRank
+            : (NormalizeVersion(CurrentVersion), int.MaxValue);
+        return CompareRank(bestRank, current) > 0
+            ? UpdateCheckResult.Available(best)
+            : UpdateCheckResult.NotAvailable(best);
+    }
+
+    /// <summary>Parses "v2.0.0-beta.6" into (2.0.0.0, 6). Stable releases rank above any beta of the same version.</summary>
+    internal static bool TryParseRank(string tagName, out (Version Version, int Pre) rank)
+    {
+        rank = (new Version(0, 0, 0, 0), int.MaxValue);
+        if (!TryParseVersion(tagName, out var version))
+        {
+            return false;
+        }
+
+        var normalized = tagName.Trim();
+        var plus = normalized.IndexOf('+');
+        if (plus >= 0)
+        {
+            normalized = normalized[..plus];
+        }
+
+        var dash = normalized.IndexOf('-');
+        var pre = int.MaxValue;
+        if (dash >= 0)
+        {
+            var suffix = normalized[(dash + 1)..];
+            var dot = suffix.LastIndexOf('.');
+            pre = dot >= 0 && int.TryParse(suffix[(dot + 1)..], out var number) ? number : 0;
+        }
+
+        rank = (NormalizeVersion(version), pre);
+        return true;
+    }
+
+    internal static int CompareRank((Version Version, int Pre) left, (Version Version, int Pre) right)
+    {
+        var comparison = left.Version.CompareTo(right.Version);
+        return comparison != 0 ? comparison : left.Pre.CompareTo(right.Pre);
+    }
+
+    private async Task<UpdateCheckResult> CheckStableChannelAsync(CancellationToken cancellationToken)
     {
         using var response = await HttpClient.GetAsync(ApiUrl, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)

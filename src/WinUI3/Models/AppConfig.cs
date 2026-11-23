@@ -8,6 +8,8 @@ public sealed class AppConfig
     public bool CloseAppsOnLock { get; set; }
     public bool StartWithWindows { get; set; }
     public bool EnableLaunchGate { get; set; } = true;
+    // "stable" | "beta" | empty (unset: prerelease builds follow beta, others stable)
+    public string UpdateChannel { get; set; } = string.Empty;
     public int IdleLockMinutes { get; set; } = 10;
     public int UnlockMinutes { get; set; } = 10;
     public string? UnlockUntil { get; set; }
