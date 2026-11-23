@@ -1,5 +1,5 @@
 App PIN Guard
-Version: 2.0.0-beta.10
+Version: 2.0.0-beta.11
 
 Install:
 1. Extract this zip file.

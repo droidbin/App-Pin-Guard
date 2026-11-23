@@ -76,6 +76,19 @@ internal sealed class LaunchAuthorizationServer : IDisposable
         acl.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
             PipeAccessRights.ReadData | PipeAccessRights.WriteData | PipeAccessRights.ReadPermissions |
                 PipeAccessRights.Synchronize, AccessControlType.Allow));
+        // A SYSTEM-created pipe can carry a System integrity label that blocks lower-integrity clients
+        // (even elevated admins). Label it Low so the DACL above is the only gate.
+        try
+        {
+            var labeled = new PipeSecurity();
+            labeled.SetSecurityDescriptorSddlForm(
+                "O:SYG:SYD:P(A;;0x120003;;;IU)(A;;0x120003;;;AU)(A;;0x1f019f;;;SY)S:(ML;;NW;;;LW)");
+            acl = labeled;
+        }
+        catch (Exception ex)
+        {
+            WriteServiceLog("pipe label unavailable: " + ex.Message);
+        }
         bool loggedAcl = false;
         bool loggedListenError = false;
 
