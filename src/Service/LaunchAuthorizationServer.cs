@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
@@ -76,21 +76,9 @@ internal sealed class LaunchAuthorizationServer : IDisposable
         acl.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
             PipeAccessRights.ReadData | PipeAccessRights.WriteData | PipeAccessRights.ReadPermissions |
                 PipeAccessRights.Synchronize, AccessControlType.Allow));
-        // A SYSTEM-created pipe can carry a System integrity label that blocks lower-integrity clients
-        // (even elevated admins). Label it Low so the DACL above is the only gate.
-        try
-        {
-            var labeled = new PipeSecurity();
-            labeled.SetSecurityDescriptorSddlForm(
-                "O:SYG:SYD:P(A;;0x120003;;;IU)(A;;0x120003;;;AU)(A;;0x1f019f;;;SY)S:(ML;;NW;;;LW)");
-            acl = labeled;
-        }
-        catch (Exception ex)
-        {
-            WriteServiceLog("pipe label unavailable: " + ex.Message);
-        }
         bool loggedAcl = false;
         bool loggedListenError = false;
+        bool loggedLabel = false;
 
         while (!stopping)
         {
@@ -104,6 +92,7 @@ internal sealed class LaunchAuthorizationServer : IDisposable
                         if (stopping) return;
                         listener = pipe;
                     }
+                    ApplyLowLabel(pipe, ref loggedLabel);
                     if (!loggedAcl)
                     {
                         loggedAcl = true;
@@ -125,6 +114,48 @@ internal sealed class LaunchAuthorizationServer : IDisposable
             }
         }
     }
+
+    // A SYSTEM-created pipe may carry a System integrity label that blocks lower-integrity clients.
+    private static void ApplyLowLabel(NamedPipeServerStream pipe, ref bool logged)
+    {
+        IntPtr descriptor = IntPtr.Zero;
+        try
+        {
+            uint size;
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptor("S:(ML;;NW;;;LW)", 1, out descriptor, out size))
+                throw new System.ComponentModel.Win32Exception();
+            bool present, defaulted;
+            IntPtr sacl;
+            if (!GetSecurityDescriptorSacl(descriptor, out present, out sacl, out defaulted) || !present)
+                throw new System.ComponentModel.Win32Exception();
+            uint result = SetSecurityInfo(pipe.SafePipeHandle.DangerousGetHandle(), 6, 0x10,
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, sacl);
+            if (!logged) { logged = true; WriteServiceLog("pipe label result=" + result); }
+        }
+        catch (Exception ex)
+        {
+            if (!logged) { logged = true; WriteServiceLog("pipe label failed: " + ex.Message); }
+        }
+        finally
+        {
+            if (descriptor != IntPtr.Zero) LocalFree(descriptor);
+        }
+    }
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string sddl, uint revision,
+        out IntPtr descriptor, out uint size);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool GetSecurityDescriptorSacl(IntPtr descriptor, out bool present, out IntPtr sacl,
+        out bool defaulted);
+
+    [DllImport("advapi32.dll")]
+    private static extern uint SetSecurityInfo(IntPtr handle, int objectType, uint info, IntPtr owner, IntPtr group,
+        IntPtr dacl, IntPtr sacl);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr memory);
 
     private void Handle(NamedPipeServerStream pipe)
     {
