@@ -22,14 +22,23 @@ internal static class GateProtocol
     internal static NamedPipeClientStream ConnectToService()
     {
 #if NET5_0_OR_GREATER
-        var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous,
-            System.Security.Principal.TokenImpersonationLevel.Identification, HandleInheritability.None);
+        // PipeDirection.InOut asks for GENERIC_WRITE (append/attributes), which the service ACL deliberately
+        // does not grant; open the handle with exactly the rights the ACL allows instead.
+        var pipe = OpenWithExactRights();
+        try
+        {
+            var system = new System.Security.Principal.SecurityIdentifier(
+                System.Security.Principal.WellKnownSidType.LocalSystemSid, null);
+            if (!system.Equals(pipe.GetAccessControl().GetOwner(typeof(System.Security.Principal.SecurityIdentifier))))
+                throw new UnauthorizedAccessException("보호 서비스의 신원을 확인할 수 없습니다.");
+            return pipe;
+        }
+        catch { pipe.Dispose(); throw; }
 #else
         var pipe = new NamedPipeClientStream(".", PipeName,
             PipeAccessRights.ReadData | PipeAccessRights.WriteData | PipeAccessRights.ReadPermissions |
                 PipeAccessRights.Synchronize, PipeOptions.Asynchronous,
             System.Security.Principal.TokenImpersonationLevel.Identification, HandleInheritability.None);
-#endif
         try
         {
             pipe.Connect(1500);
@@ -40,7 +49,42 @@ internal static class GateProtocol
             return pipe;
         }
         catch { pipe.Dispose(); throw; }
+#endif
     }
+
+#if NET5_0_OR_GREATER
+    private const uint PipeReadData = 0x1, PipeWriteData = 0x2, ReadControl = 0x20000, SynchronizeRight = 0x100000;
+    private const uint OpenExisting = 3, FlagOverlapped = 0x40000000;
+    private const uint SecuritySqosPresent = 0x100000, SecurityIdentification = 0x10000;
+    private const int ErrorFileNotFound = 2, ErrorPipeBusy = 231;
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafePipeHandle CreateFile(string name, uint access, uint share,
+        IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    private static NamedPipeClientStream OpenWithExactRights()
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(1500);
+        while (true)
+        {
+            var handle = CreateFile(@"\\.\pipe\" + PipeName,
+                PipeReadData | PipeWriteData | ReadControl | SynchronizeRight, 0, IntPtr.Zero, OpenExisting,
+                FlagOverlapped | SecuritySqosPresent | SecurityIdentification, IntPtr.Zero);
+            if (!handle.IsInvalid)
+                return new NamedPipeClientStream(PipeDirection.InOut, true, true, handle);
+
+            int error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            handle.Dispose();
+            if ((error != ErrorFileNotFound && error != ErrorPipeBusy) || DateTime.UtcNow >= deadline)
+            {
+                if (error == ErrorFileNotFound || error == ErrorPipeBusy)
+                    throw new TimeoutException("Gate pipe connect timed out.");
+                throw new System.ComponentModel.Win32Exception(error);
+            }
+            System.Threading.Thread.Sleep(50);
+        }
+    }
+#endif
 
     internal static void WriteText(Stream stream, string value, int maximum)
     {
