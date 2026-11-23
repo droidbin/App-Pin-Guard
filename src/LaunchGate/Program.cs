@@ -82,8 +82,44 @@ internal static class Gate
             form.AcceptButton = open;
             form.CancelButton = cancel;
             form.ActiveControl = pin;
-            return form.ShowDialog() == DialogResult.OK ? pin.Text : null;
+            DialogResult result = form.ShowDialog();
+            EnsureCursorVisible();
+            return result == DialogResult.OK ? pin.Text : null;
         }
+    }
+
+    private static void EnsureCursorVisible()
+    {
+        for (int i = 0; i < 10 && IsCursorHidden(); i++)
+        {
+            ShowCursor(true);
+        }
+
+        SetCursor(LoadCursor(IntPtr.Zero, IdcArrow));
+
+        var inputs = new Input[]
+        {
+            new Input
+            {
+                Type = InputMouse,
+                Mi = new MouseInput { Dx = 1, Dy = 0, Flags = MouseEventfMove },
+            },
+            new Input
+            {
+                Type = InputMouse,
+                Mi = new MouseInput { Dx = -1, Dy = 0, Flags = MouseEventfMove },
+            },
+        };
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input)));
+    }
+
+    private static bool IsCursorHidden()
+    {
+        var cursorInfo = new CursorInfo
+        {
+            Size = (uint)Marshal.SizeOf(typeof(CursorInfo)),
+        };
+        return GetCursorInfo(ref cursorInfo) && (cursorInfo.Flags & CursorShowing) == 0;
     }
 
     private static void ShowError(string message)
@@ -171,6 +207,60 @@ internal static class Gate
 
     [DllImport("kernel32.dll")]
     private static extern bool TerminateProcess(IntPtr process, uint code);
+
+    private const uint CursorShowing = 0x00000001;
+    private const uint InputMouse = 0;
+    private const uint MouseEventfMove = 0x0001;
+    private static readonly IntPtr IdcArrow = new IntPtr(32512);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ScreenPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorInfo
+    {
+        public uint Size;
+        public uint Flags;
+        public IntPtr Cursor;
+        public ScreenPoint ScreenPosition;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInput
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Input
+    {
+        public uint Type;
+        public MouseInput Mi;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorInfo(ref CursorInfo cursorInfo);
+
+    [DllImport("user32.dll")]
+    private static extern int ShowCursor(bool show);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadCursor(IntPtr instance, IntPtr cursorName);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetCursor(IntPtr cursor);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint inputsCount, Input[] inputs, int size);
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);

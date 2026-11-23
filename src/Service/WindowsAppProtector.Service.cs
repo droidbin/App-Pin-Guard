@@ -850,6 +850,13 @@ internal sealed class AppConfig
     {
         UnlockUntil = string.Empty;
         ProtectedApps = new List<ProtectedApp>();
+        EnableLaunchGate = true;
+    }
+
+    [OnDeserializing]
+    private void OnDeserializing(StreamingContext context)
+    {
+        EnableLaunchGate = true;
     }
 
     [DataMember]

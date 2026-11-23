@@ -22,8 +22,23 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - name: Run unit tests
+        run: dotnet test tests/UnitTests/UnitTests.csproj -c Release
+      # Setup.exe performs an administrative installation (service/registry changes) and cannot run
+      # non-destructively in CI, so we validate SettingsMigration and WindowAgentSmoke instead.
       - name: Test settings migration
         run: dotnet run --project tests/SettingsMigration/SettingsMigration.csproj -c Release
+      - name: Build and run WindowAgent smoke test
+        shell: pwsh
+        run: |
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          $outDir = Join-Path $env:RUNNER_TEMP 'window-agent-smoke'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $exe = Join-Path $outDir 'WindowAgentSmoke.exe'
+          & $csc /nologo /target:exe /main:WindowAgentSmoke /out:$exe /r:System.Windows.Forms.dll src/WindowAgent/Program.cs tests/WindowAgentSmoke/Program.cs
+          if ($LASTEXITCODE -ne 0) { throw 'WindowAgentSmoke build failed.' }
+          & $exe
+          if ($LASTEXITCODE -ne 0) { throw 'WindowAgentSmoke execution failed.' }
       - name: Build application and installer
         shell: pwsh
         run: ./build_distribution.ps1

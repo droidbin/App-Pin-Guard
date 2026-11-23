@@ -44,10 +44,10 @@ public sealed class JsonSettingsStore : ISettingsStore
 
         // Prefer the policy the installed service already trusted. A legacy profile
         // may supply a policy only when the shared file has no prior PIN or app list.
-        var config = HasPin(shared) || shared.ProtectedApps.Count != 0 || shared.ProtectionEnabled || shared.EnableLaunchGate
+        var config = HasPin(shared) || shared.ProtectedApps.Count != 0 || shared.ProtectionEnabled
             ? shared
             : await ReadOptionalAsync<AppConfig>(userConfigPath, cancellationToken) ?? shared;
-        if (config == shared && !HasPin(config) && (config.ProtectedApps.Count != 0 || config.ProtectionEnabled || config.EnableLaunchGate))
+        if (config == shared && !HasPin(config) && (config.ProtectedApps.Count != 0 || config.ProtectionEnabled))
         {
             throw new InvalidDataException("공유 보호 정책에 PIN 정보가 없습니다.");
         }
@@ -154,7 +154,7 @@ public sealed class JsonSettingsStore : ISettingsStore
 
     private static void RequirePinForSavedPolicy(AppConfig config)
     {
-        if (!HasPin(config) && (config.ProtectedApps.Count != 0 || config.ProtectionEnabled || config.EnableLaunchGate))
+        if (!HasPin(config) && (config.ProtectedApps.Count != 0 || config.ProtectionEnabled))
         {
             throw new InvalidDataException("저장된 보호 정책에 관리 PIN이 없습니다.");
         }

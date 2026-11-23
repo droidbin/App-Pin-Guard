@@ -37,6 +37,8 @@ public sealed class MainWindow : Window
     private const int PowerSuspend = 0x4;
     private const int PowerResumeAutomatic = 0x12;
     private const uint CursorShowing = 0x00000001;
+    private const uint InputMouse = 0;
+    private const uint MouseEventfMove = 0x0001;
     private const uint EventSystemForeground = 0x0003;
     private const uint EventObjectShow = 0x8002;
     private const uint WinEventSkipOwnProcess = 0x0002;
@@ -743,7 +745,10 @@ public sealed class MainWindow : Window
         if ((message == WmWtsSessionChange && wParam.ToInt64() == WtsSessionUnlock) ||
             (message == WmPowerBroadcast && wParam.ToInt64() == PowerResumeAutomatic))
         {
-            App.WriteProtectionLog($"{(message == WmWtsSessionChange ? "session-unlock" : "power-resume")} cursor={GetCursorVisibilityForLog()}");
+            var before = GetCursorVisibilityForLog();
+            EnsureCursorVisible();
+            var after = GetCursorVisibilityForLog();
+            App.WriteProtectionLog($"{(message == WmWtsSessionChange ? "session-unlock" : "power-resume")} cursor={before}->{after}");
         }
 
         if ((message == WmWtsSessionChange && wParam.ToInt64() is WtsConsoleDisconnect or WtsRemoteDisconnect or WtsSessionLock) ||
@@ -788,6 +793,40 @@ public sealed class MainWindow : Window
         }
 
         return DefWindowProc(windowHandle, message, wParam, lParam);
+    }
+
+    private static void EnsureCursorVisible()
+    {
+        for (int i = 0; i < 10 && IsCursorHidden(); i++)
+        {
+            ShowCursor(true);
+        }
+
+        SetCursor(LoadCursor(IntPtr.Zero, IdcArrow));
+
+        var inputs = new Input[]
+        {
+            new()
+            {
+                type = InputMouse,
+                mi = new MouseInput { dx = 1, dy = 0, dwFlags = MouseEventfMove },
+            },
+            new()
+            {
+                type = InputMouse,
+                mi = new MouseInput { dx = -1, dy = 0, dwFlags = MouseEventfMove },
+            },
+        };
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
+    }
+
+    private static bool IsCursorHidden()
+    {
+        var cursorInfo = new CursorInfo
+        {
+            cbSize = (uint)Marshal.SizeOf<CursorInfo>(),
+        };
+        return GetCursorInfo(ref cursorInfo) && (cursorInfo.flags & CursorShowing) == 0;
     }
 
     private static string GetCursorVisibilityForLog()
@@ -2165,6 +2204,24 @@ public sealed class MainWindow : Window
         public ScreenPoint screenPosition;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInput
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Input
+    {
+        public uint type;
+        public MouseInput mi;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private sealed class OpenFileName
     {
@@ -2311,6 +2368,15 @@ public sealed class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorInfo(ref CursorInfo cursorInfo);
+
+    [DllImport("user32.dll")]
+    private static extern int ShowCursor(bool bShow);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetCursor(IntPtr hCursor);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, Input[] pInputs, int cbSize);
 
     [DllImport("user32.dll")]
     private static extern IntPtr CreatePopupMenu();

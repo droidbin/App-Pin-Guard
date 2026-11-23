@@ -58,11 +58,10 @@ public sealed class GitHubUpdateService
             asset.Value.DownloadUrl,
             asset.Value.Sha256);
 
-        var versionComparison = NormalizeVersion(latestVersion).CompareTo(NormalizeVersion(CurrentVersion));
         var isCurrentPrerelease = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?.Contains('-', StringComparison.Ordinal) == true;
-        return versionComparison > 0 || (versionComparison == 0 && isCurrentPrerelease)
+        return IsNewerRelease(latestVersion, CurrentVersion, isCurrentPrerelease)
             ? UpdateCheckResult.Available(release)
             : UpdateCheckResult.NotAvailable(release);
     }
@@ -219,7 +218,13 @@ public sealed class GitHubUpdateService
                 : string.Empty;
     }
 
-    private static bool TryParseVersion(string tagName, out Version version)
+    internal static bool IsNewerRelease(Version latestVersion, Version currentVersion, bool isCurrentPrerelease)
+    {
+        var versionComparison = NormalizeVersion(latestVersion).CompareTo(NormalizeVersion(currentVersion));
+        return versionComparison > 0 || (versionComparison == 0 && isCurrentPrerelease);
+    }
+
+    internal static bool TryParseVersion(string tagName, out Version version)
     {
         version = new Version(0, 0, 0, 0);
         var normalized = tagName.Trim();
@@ -237,7 +242,7 @@ public sealed class GitHubUpdateService
         return Version.TryParse(normalized, out version!);
     }
 
-    private static Version NormalizeVersion(Version version)
+    internal static Version NormalizeVersion(Version version)
     {
         return new Version(
             Math.Max(version.Major, 0),
