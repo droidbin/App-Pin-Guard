@@ -4,6 +4,35 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 $appVersion = (Get-Content -LiteralPath (Join-Path $root "VERSION") -Raw).Trim()
 
+# Optional Authenticode signing. Unsigned builds are the default; signing turns on when one of these is set:
+#   WAP_SIGN_THUMBPRINT  SHA1 thumbprint of a code-signing certificate in the Windows certificate store
+#   WAP_SIGN_COMMAND     any signing command; {file} is replaced with the quoted path (CA cloud-signing tools)
+# WAP_SIGN_TIMESTAMP overrides the RFC 3161 timestamp server.
+function Get-SigningTool {
+    $kits = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+    $found = Get-ChildItem -Path $kits -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -like "*\x64\signtool.exe" } | Sort-Object FullName -Descending | Select-Object -First 1
+    if (-not $found) { throw "signtool.exe not found under $kits" }
+    return $found.FullName
+}
+
+function Invoke-CodeSigning([string[]]$files) {
+    $thumbprint = $env:WAP_SIGN_THUMBPRINT
+    $command = $env:WAP_SIGN_COMMAND
+    if ([string]::IsNullOrWhiteSpace($thumbprint) -and [string]::IsNullOrWhiteSpace($command)) { return }
+    $timestamp = if ($env:WAP_SIGN_TIMESTAMP) { $env:WAP_SIGN_TIMESTAMP } else { "http://timestamp.digicert.com" }
+    foreach ($file in $files) {
+        if ($command) {
+            Invoke-Expression ($command.Replace("{file}", '"' + $file + '"'))
+        }
+        else {
+            & (Get-SigningTool) sign /sha1 $thumbprint /fd sha256 /tr $timestamp /td sha256 /d "App PIN Guard" $file
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Signing failed: $file" }
+        Write-Host "Signed $file"
+    }
+}
+
 $candidateRoots = @(
     (Join-Path $root "src\Avalonia\bin"),
     (Join-Path $root "build")
@@ -111,6 +140,8 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+Invoke-CodeSigning @((Join-Path $payloadDir "WindowsAppProtector.Service.exe"), $gateExe, $agentExe, (Join-Path $payloadDir "WindowsAppProtector.WinUI.exe"))
+
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
@@ -129,6 +160,9 @@ try {
 finally {
     $stream.Dispose()
 }
+
+# The signature goes last: it sits after the appended payload, which Setup finds through the PE certificate table.
+Invoke-CodeSigning @($setupExe)
 
 Write-Host "Created $setupExe"
 New-Item -ItemType Directory -Path $versionedDistDir -Force | Out-Null

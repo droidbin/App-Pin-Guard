@@ -415,13 +415,24 @@ internal static class Setup
             throw new InvalidOperationException("\uC124\uCE58 \uD398\uC774\uB85C\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
         }
 
-        int markerOffset = allBytes.Length - Marker.Length;
-        for (int i = 0; i < Marker.Length; i++)
+        // A code-signed Setup.exe carries its Authenticode certificate table after the payload; the payload ends where
+        // that table starts (Authenticode pads the data before the table to 8 bytes).
+        int payloadEnd = FindPayloadEnd(allBytes);
+        int markerOffset = -1;
+        for (int padding = 0; padding < 8 && markerOffset < 0; padding++)
         {
-            if (allBytes[markerOffset + i] != Marker[i])
+            int candidate = payloadEnd - padding - Marker.Length;
+            if (candidate < sizeof(long)) break;
+            bool match = true;
+            for (int i = 0; i < Marker.Length && match; i++)
             {
-                throw new InvalidOperationException("\uC124\uCE58 \uD398\uC774\uB85C\uB4DC \uB9C8\uCEE4\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+                match = allBytes[candidate + i] == Marker[i];
             }
+            if (match) markerOffset = candidate;
+        }
+        if (markerOffset < 0)
+        {
+            throw new InvalidOperationException("\uC124\uCE58 \uD398\uC774\uB85C\uB4DC \uB9C8\uCEE4\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
         }
 
         long zipLength = BitConverter.ToInt64(allBytes, markerOffset - sizeof(long));
@@ -435,6 +446,29 @@ internal static class Setup
         using (var output = File.Create(zipPath))
         {
             source.CopyTo(output);
+        }
+    }
+
+    // Start of the Authenticode certificate table (PE data directory 4), or the file length when the file is unsigned.
+    private static int FindPayloadEnd(byte[] bytes)
+    {
+        try
+        {
+            int peHeader = BitConverter.ToInt32(bytes, 0x3C);
+            if (peHeader <= 0 || peHeader + 24 > bytes.Length || BitConverter.ToUInt32(bytes, peHeader) != 0x00004550) return bytes.Length;
+            int optional = peHeader + 24;
+            ushort magic = BitConverter.ToUInt16(bytes, optional);
+            int directories = optional + (magic == 0x20B ? 112 : 96);
+            int certEntry = directories + 4 * 8;
+            if (certEntry + 8 > bytes.Length) return bytes.Length;
+            uint offset = BitConverter.ToUInt32(bytes, certEntry);
+            uint size = BitConverter.ToUInt32(bytes, certEntry + 4);
+            if (offset == 0 || size == 0 || (long)offset + size > bytes.Length) return bytes.Length;
+            return (int)offset;
+        }
+        catch (ArgumentException)
+        {
+            return bytes.Length;
         }
     }
 
