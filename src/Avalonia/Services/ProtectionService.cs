@@ -56,6 +56,11 @@ public sealed class ProtectionService : IProtectionService
                     });
                 }
             }
+            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5)
+            {
+                // The fast-path pipe is optional: the service re-reads the saved config every 5 seconds anyway.
+                App.WriteProtectionLog("policy-resync-pipe-denied; relying on service polling");
+            }
             catch (Exception ex) when (ex is not TimeoutException && ex is not IOException && ex is not InvalidOperationException)
             {
                 App.WriteProtectionLog("policy-resync-failed " + ex.GetType().Name + " hresult=0x" + ex.HResult.ToString("X8") + " " + ex.Message);
