@@ -74,6 +74,15 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public string CurrentVersionDisplay => $"현재 버전 v{_currentVersionText}";
 
+    // "보호 상태" card: what the service reports in status.json.
+    public string ProtectionServiceText => _mainViewModel.ProtectionServiceText;
+
+    public string ProtectionRevisionText => _mainViewModel.ProtectionRevisionText;
+
+    public string ProtectionAgentText => _mainViewModel.ProtectionAgentText;
+
+    public string ProtectionTamperText => _mainViewModel.ProtectionTamperText;
+
     public string PinMessage
     {
         get => _pinMessage;
@@ -551,6 +560,13 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             or nameof(MainViewModel.UpdateChannel))
         {
             SyncFromMainViewModel();
+        }
+        else if (e.PropertyName is nameof(MainViewModel.ProtectionServiceText)
+            or nameof(MainViewModel.ProtectionRevisionText)
+            or nameof(MainViewModel.ProtectionAgentText)
+            or nameof(MainViewModel.ProtectionTamperText))
+        {
+            OnPropertyChanged(e.PropertyName);
         }
         else if (e.PropertyName is nameof(MainViewModel.HotkeyValidationMessage)
             or nameof(MainViewModel.CanSaveHotkeys))

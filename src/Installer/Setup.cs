@@ -15,12 +15,10 @@ internal static class Setup
 {
     private static readonly byte[] Marker = System.Text.Encoding.ASCII.GetBytes("WAPZIP01");
     private const string AppName = "Windows App Protector";
-    private const string AppVersion = "2.0.0-beta.13";
+    private const string AppVersion = "2.0.0";
     private const string ExeName = "WindowsAppProtector.WinUI.exe";
     private const string ServiceExeName = "WindowsAppProtector.Service.exe";
     private const string ServiceName = "WindowsAppProtectorService";
-    private const string IfeoRegistryPath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
-    private const string MarkerName = "WindowsAppProtectorManaged";
     private const string UninstallRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\WindowsAppProtector";
     private const int DialogResultYes = 6;
     private const uint MessageBoxInformation = 0x00000040;
@@ -40,9 +38,7 @@ internal static class Setup
 
             string programFilesDir = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             string installDir = ResolveInstallDirectory(args, programFilesDir);
-            string dataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                AppName);
+            string dataDir = WapPaths.Root;
 
             // Validate and unpack the new payload before removing a working installation.
             stagingDir = Path.Combine(Path.GetTempPath(), "WindowsAppProtector.Setup." + Guid.NewGuid().ToString("N"));
@@ -70,7 +66,8 @@ internal static class Setup
             WaitForUpdateSourceProcess(args);
             StopAndDeleteService();
             CleanupOldProcesses();
-            TryCleanupManagedIfeoRules();
+            // The IFEO rules are left in place on purpose: an update must not open a window in which protected
+            // apps start unchecked. The new service re-applies them as soon as it starts; only uninstall removes them.
             foreach (string previousDir in previousInstallDirs)
             {
                 if (!string.Equals(previousDir, installDir, StringComparison.OrdinalIgnoreCase))
@@ -87,7 +84,8 @@ internal static class Setup
             Directory.CreateDirectory(installDir);
             Directory.CreateDirectory(dataDir);
             SecureDataDirectory(dataDir);
-            EnsureSharedConfigFile(dataDir);
+            // policy.json, secrets.json and ui.json are created by the service/UI (an existing config.json from
+            // an older install is migrated by whichever of them starts first).
 
             CopyPayloadDirectory(payloadDir, installDir);
 
@@ -408,92 +406,6 @@ internal static class Setup
         }
     }
 
-    private static void EnsureSharedConfigFile(string dataDir)
-    {
-        string configPath = Path.Combine(dataDir, "config.json");
-        if (!File.Exists(configPath))
-        {
-            File.WriteAllText(
-                configPath,
-                "{\r\n" +
-                "  \"ProtectionEnabled\": false,\r\n" +
-                "  \"CloseToBackground\": true,\r\n" +
-                "  \"StartWithWindows\": false,\r\n" +
-                "  \"EnableLaunchGate\": true,\r\n" +
-                "  \"IdleLockMinutes\": 10,\r\n" +
-                "  \"UnlockMinutes\": 10,\r\n" +
-                "  \"UnlockUntil\": null,\r\n" +
-                "  \"AppPinSalt\": \"\",\r\n" +
-                "  \"AppPinHash\": \"\",\r\n" +
-                "  \"GlobalHotkeys\": {},\r\n" +
-                "  \"ProtectedApps\": []\r\n" +
-                "}\r\n",
-                System.Text.Encoding.UTF8);
-        }
-
-    }
-
-    private static void TryCleanupManagedIfeoRules()
-    {
-        try
-        {
-            using (var localMachine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
-            using (var root = localMachine.OpenSubKey(IfeoRegistryPath, writable: true))
-            {
-                if (root == null)
-                {
-                    return;
-                }
-
-                foreach (string name in root.GetSubKeyNames().ToArray())
-                {
-                    TryCleanupManagedIfeoRule(root, name);
-                }
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private static void TryCleanupManagedIfeoRule(RegistryKey root, string name)
-    {
-        try
-        {
-            using (var key = root.OpenSubKey(name, writable: true))
-            {
-                if (key == null || Convert.ToString(key.GetValue(MarkerName)) != "1")
-                {
-                    return;
-                }
-
-                key.DeleteValue("Debugger", false);
-                key.DeleteValue(MarkerName, false);
-                foreach (string child in key.GetSubKeyNames())
-                {
-                    if (!child.StartsWith("WAP.Launch.", StringComparison.Ordinal)) continue;
-                    bool owned;
-                    using (var filter = key.OpenSubKey(child))
-                        owned = filter != null && Convert.ToString(filter.GetValue(MarkerName)) == "1";
-                    if (owned) key.DeleteSubKey(child, false);
-                }
-                if (key.SubKeyCount == 0) key.DeleteValue("UseFilter", false);
-                if (key.ValueCount != 0 || key.SubKeyCount != 0) return;
-            }
-
-            try
-            {
-                root.DeleteSubKey(name, false);
-            }
-            catch
-            {
-            }
-        }
-        catch
-        {
-        }
-    }
-
     private static void ExtractEmbeddedPayload(string zipPath)
     {
         string self = Assembly.GetExecutingAssembly().Location;
@@ -572,10 +484,14 @@ internal static class Setup
             "  powershell -NoProfile -ExecutionPolicy Bypass -Command \"Start-Process -FilePath '%~f0' -Verb RunAs\"\r\n" +
             "  exit /b\r\n" +
             ")\r\n" +
+            // Unlock everything and wait until the service has applied it (the agent restores hidden windows),
+            // then tell the window agents to exit. Rules and data are removed only after that.
+            "\"%~dp0WindowsAppProtector.Service.exe\" --uninstall-prepare >nul 2>&1\r\n" +
             "sc stop WindowsAppProtectorService >nul 2>&1\r\n" +
             "sc delete WindowsAppProtectorService >nul 2>&1\r\n" +
             "taskkill /IM WindowsAppProtector.WinUI.exe /F >nul 2>&1\r\n" +
             "taskkill /IM WindowsAppProtector.Service.exe /F >nul 2>&1\r\n" +
+            "taskkill /IM WindowsAppProtector.WindowAgent.exe /F >nul 2>&1\r\n" +
             "timeout /t 1 /nobreak >nul 2>&1\r\n" +
             "schtasks /Delete /TN \"Windows App Protector\" /F >nul 2>&1\r\n" +
             "reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"Windows App Protector\" /f >nul 2>&1\r\n" +
@@ -583,6 +499,7 @@ internal static class Setup
             "rmdir /s /q \"%ProgramData%\\Windows App Protector\" >nul 2>&1\r\n" +
             "rmdir /s /q \"%AppData%\\WindowsAppProtector.WinUI\" >nul 2>&1\r\n" +
             "rmdir /s /q \"%AppData%\\WindowsAppProtector\" >nul 2>&1\r\n" +
+            "rmdir /s /q \"%LocalAppData%\\WindowsAppProtector.WinUI\" >nul 2>&1\r\n" +
             "del \"%PUBLIC%\\Desktop\\Windows App Protector.lnk\" >nul 2>&1\r\n" +
             "del \"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Windows App Protector.lnk\" >nul 2>&1\r\n" +
             "del \"%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\Windows App Protector Uninstall.lnk\" >nul 2>&1\r\n" +

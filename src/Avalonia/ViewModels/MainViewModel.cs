@@ -1,19 +1,33 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.Serialization.Json;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WindowsAppProtector.Models;
 using WindowsAppProtector.Services;
 
 namespace WindowsAppProtector.ViewModels;
 
+/// <summary>
+/// Edits the policy (policy.json), secrets (secrets.json) and UI settings (ui.json) and reports what the
+/// protection service says it applied. The UI enforces nothing itself: the service does, even when this
+/// window is closed.
+/// </summary>
 public class MainViewModel : ObservableObject
 {
-    private readonly ISettingsStore settingsStore;
-    private readonly IProtectionService protectionService;
+    private const string ServiceNotAppliedMessage =
+        "보호 서비스가 아직 변경 사항을 적용하지 않았습니다. 서비스 상태를 확인하세요.";
+
     private readonly INotificationService? notificationService;
-    private readonly ProtectedAppProcessService protectedAppProcessService = new();
-    private readonly AppConfig config = new();
+    private readonly PolicyChangeNotifier policyNotifier = new();
+    private readonly ServiceStatusReader statusReader = new();
+    private readonly UiSettingsStore uiStore = new();
+    private readonly SemaphoreSlim commitGate = new(1, 1);
+    private PolicyDocument policy = new();
+    private SecretsDocument secrets = new();
+    private UiSettings ui = new();
+    private StatusDocument? serviceStatus;
     private bool protectionEnabled;
     private string searchText = string.Empty;
     private string statusText = "잠금 상태: 대기";
@@ -26,22 +40,12 @@ public class MainViewModel : ObservableObject
     private string lastPolicySyncError = string.Empty;
 
     public MainViewModel()
-        : this(new JsonSettingsStore(), new ProtectionService(), notificationService: null)
+        : this(notificationService: null)
     {
     }
 
     public MainViewModel(INotificationService? notificationService)
-        : this(new JsonSettingsStore(), new ProtectionService(), notificationService)
     {
-    }
-
-    public MainViewModel(
-        ISettingsStore settingsStore,
-        IProtectionService protectionService,
-        INotificationService? notificationService = null)
-    {
-        this.settingsStore = settingsStore;
-        this.protectionService = protectionService;
         this.notificationService = notificationService;
         ValidateHotkeys();
     }
@@ -52,9 +56,9 @@ public class MainViewModel : ObservableObject
         private set => SetProperty(ref protectionEnabled, value);
     }
 
-    public int LockedAppCount => config.ProtectedApps.Count(app => app.Enabled);
+    public int LockedAppCount => policy.Apps.Count(app => app.Locked);
 
-    public int TotalAppCount => config.ProtectedApps.Count;
+    public int TotalAppCount => policy.Apps.Count;
 
     public ProtectionServiceState ServiceState
     {
@@ -120,11 +124,54 @@ public class MainViewModel : ObservableObject
         }
     }
 
+    // ---- "보호 상태" card (Settings) -----------------------------------------------------------------
+
+    public string ProtectionServiceText => serviceState switch
+    {
+        ProtectionServiceState.Running when serviceStatus is { PolicyError: { Length: > 0 } } => "실행 중 (정책 오류)",
+        ProtectionServiceState.Running when serviceStatus is { Healthy: false } => "실행 중 (확인 필요)",
+        ProtectionServiceState.Running => "실행 중",
+        ProtectionServiceState.Stopped => "중지됨",
+        ProtectionServiceState.NotInstalled => "설치되지 않음",
+        _ => "확인할 수 없음",
+    };
+
+    public string ProtectionRevisionText => serviceStatus is null
+        ? "적용된 버전: 확인할 수 없음"
+        : serviceStatus.AppliedRevision >= policy.Revision
+            ? $"적용된 버전: {serviceStatus.AppliedRevision} (최신)"
+            : $"적용된 버전: {serviceStatus.AppliedRevision} / 저장된 버전: {policy.Revision}";
+
+    public string ProtectionAgentText
+    {
+        get
+        {
+            if (serviceStatus is null || serviceStatus.Agents.Count == 0)
+            {
+                return "창 에이전트: 실행 중인 세션 없음";
+            }
+
+            var running = serviceStatus.Agents.Count(agent => agent.State == "running");
+            return $"창 에이전트: 세션 {serviceStatus.Agents.Count}개 중 {running}개 실행 중";
+        }
+    }
+
+    public string ProtectionTamperText
+    {
+        get
+        {
+            var latest = serviceStatus?.TamperEvents.FirstOrDefault();
+            return latest is null
+                ? "최근 변조 감지: 없음"
+                : $"최근 변조 감지: {FormatLocal(latest.AtUtc)} {latest.Detail}";
+        }
+    }
+
     public bool IsAppRegistered(PackagedAppInfo app)
     {
         if (app.IsPackaged)
         {
-            return config.ProtectedApps.Any(item =>
+            return policy.Apps.Any(item =>
                 (!string.IsNullOrWhiteSpace(app.AppUserModelId) &&
                     string.Equals(item.AppUserModelId, app.AppUserModelId, StringComparison.OrdinalIgnoreCase)) ||
                 (!string.IsNullOrWhiteSpace(app.ExecutableName) &&
@@ -140,7 +187,7 @@ public class MainViewModel : ObservableObject
         try
         {
             var fullPath = Path.GetFullPath(app.Path);
-            return config.ProtectedApps.Any(item =>
+            return policy.Apps.Any(item =>
                 !item.IsPackaged &&
                 !string.IsNullOrWhiteSpace(item.Path) &&
                 string.Equals(Path.GetFullPath(item.Path), fullPath, StringComparison.OrdinalIgnoreCase));
@@ -189,12 +236,12 @@ public class MainViewModel : ObservableObject
 
     public bool CloseToBackground
     {
-        get => config.CloseToBackground;
+        get => ui.CloseToBackground;
         set
         {
-            if (config.CloseToBackground != value)
+            if (ui.CloseToBackground != value)
             {
-                config.CloseToBackground = value;
+                ui.CloseToBackground = value;
                 OnPropertyChanged();
             }
         }
@@ -202,12 +249,12 @@ public class MainViewModel : ObservableObject
 
     public bool StartWithWindows
     {
-        get => config.StartWithWindows;
+        get => ui.StartWithWindows;
         set
         {
-            if (config.StartWithWindows != value)
+            if (ui.StartWithWindows != value)
             {
-                config.StartWithWindows = value;
+                ui.StartWithWindows = value;
                 OnPropertyChanged();
             }
         }
@@ -215,12 +262,12 @@ public class MainViewModel : ObservableObject
 
     public bool CloseAppsOnLock
     {
-        get => config.CloseAppsOnLock;
+        get => policy.CloseAppsOnLock;
         set
         {
-            if (config.CloseAppsOnLock != value)
+            if (policy.CloseAppsOnLock != value)
             {
-                config.CloseAppsOnLock = value;
+                policy.CloseAppsOnLock = value;
                 OnPropertyChanged();
             }
         }
@@ -228,13 +275,13 @@ public class MainViewModel : ObservableObject
 
     public int IdleLockMinutes
     {
-        get => config.IdleLockMinutes;
+        get => ui.IdleLockMinutes;
         set
         {
             var clampedValue = Math.Clamp(value, 0, 1440);
-            if (config.IdleLockMinutes != clampedValue)
+            if (ui.IdleLockMinutes != clampedValue)
             {
-                config.IdleLockMinutes = clampedValue;
+                ui.IdleLockMinutes = clampedValue;
                 OnPropertyChanged();
             }
         }
@@ -242,19 +289,17 @@ public class MainViewModel : ObservableObject
 
     public ObservableCollection<ProtectedAppViewModel> Apps { get; } = new();
 
-    public bool HasAppPin =>
-        !string.IsNullOrWhiteSpace(config.AppPinSalt) &&
-        !string.IsNullOrWhiteSpace(config.AppPinHash);
+    public bool HasAppPin => secrets.AppPin.IsSet;
 
-    public bool EnableLaunchGate => config.EnableLaunchGate;
+    public bool EnableLaunchGate => policy.EnableLaunchGate;
 
     public string UpdateChannel
     {
         get
         {
-            if (string.Equals(config.UpdateChannel, GitHubUpdateService.BetaChannel, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(ui.UpdateChannel, GitHubUpdateService.BetaChannel, StringComparison.OrdinalIgnoreCase))
                 return GitHubUpdateService.BetaChannel;
-            if (string.Equals(config.UpdateChannel, GitHubUpdateService.StableChannel, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(ui.UpdateChannel, GitHubUpdateService.StableChannel, StringComparison.OrdinalIgnoreCase))
                 return GitHubUpdateService.StableChannel;
             var informational = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
@@ -267,10 +312,11 @@ public class MainViewModel : ObservableObject
     internal (bool CustomPin, int Minutes, int? Start, int? End, bool RelockOnExit)? GetLaunchPolicy(ProtectedAppViewModel? item)
     {
         var app = item is null ? null : FindModel(item);
-        if (app is null || app.IsPackaged || ProtectionService.UsesWindowOnlyBlocking(app))
+        if (app is null || app.IsPackaged || PolicyRules.IsWindowMode(app))
             return null;
-        return (!string.IsNullOrEmpty(app.LaunchPinHash), app.LaunchAllowedMinutes,
-            app.LaunchLockStartMinute, app.LaunchLockEndMinute, app.LaunchRelockOnExit);
+        var customPin = app.Launch.HasOwnPin && secrets.FindAppPin(app.Id)?.IsSet == true;
+        return (customPin, app.Launch.AllowedMinutes,
+            app.Launch.LockStartMinute, app.Launch.LockEndMinute, app.Launch.RelockOnExit);
     }
 
     internal async Task<bool> SaveLaunchPolicyAsync(ProtectedAppViewModel item, bool useDefaultPin,
@@ -282,18 +328,19 @@ public class MainViewModel : ObservableObject
 
         if (useDefaultPin)
         {
-            app.LaunchPinSalt = string.Empty;
-            app.LaunchPinHash = string.Empty;
+            secrets.RemoveAppPin(app.Id);
+            app.Launch.HasOwnPin = false;
         }
         else if (newPin.Length > 0)
         {
-            (app.LaunchPinSalt, app.LaunchPinHash) = PinHasher.CreateHash(newPin);
+            secrets.SetAppPin(app.Id, PinHash.Create(newPin));
+            app.Launch.HasOwnPin = true;
         }
-        app.LaunchAllowedMinutes = minutes;
-        app.LaunchLockStartMinute = start;
-        app.LaunchLockEndMinute = end;
-        app.LaunchRelockOnExit = relockOnExit;
-        if (await SaveAndResyncPolicyAsync())
+        app.Launch.AllowedMinutes = minutes;
+        app.Launch.LockStartMinute = start;
+        app.Launch.LockEndMinute = end;
+        app.Launch.RelockOnExit = relockOnExit;
+        if (await CommitAsync())
         {
             var summary = BuildPolicySummary(app);
             item.PolicySummary = summary;
@@ -319,40 +366,28 @@ public class MainViewModel : ObservableObject
         new("unlock-all", "목록 해제", "현재 앱 목록의 잠금을 해제합니다.", "Ctrl+Shift+U"),
     };
 
-    public IReadOnlySet<string> GetLockedExecutableNames()
-    {
-        if (!LockRulesActive())
-        {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        return config.ProtectedApps
-            .Where(app => app.Enabled && !ProtectionService.UsesWindowOnlyBlocking(app) && !config.EnableLaunchGate)
-            .Select(GetExecutableName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    }
-
-    public IReadOnlySet<string> GetLockedPackageFamilyNames()
-    {
-        // Package-family matching is performed by the service-managed session agent.
-        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    }
-
     public async Task InitializeAsync()
     {
-        var loaded = await settingsStore.LoadAsync();
-        config.ProtectionEnabled = loaded.ProtectionEnabled;
-        config.CloseToBackground = loaded.CloseToBackground;
-        config.CloseAppsOnLock = loaded.CloseAppsOnLock;
-        config.StartWithWindows = loaded.StartWithWindows;
-        config.EnableLaunchGate = loaded.EnableLaunchGate;
-        config.UpdateChannel = loaded.UpdateChannel;
-        config.IdleLockMinutes = loaded.IdleLockMinutes;
-        config.UnlockMinutes = loaded.UnlockMinutes;
-        config.UnlockUntil = null;
-        config.AppPinSalt = loaded.AppPinSalt;
-        config.AppPinHash = loaded.AppPinHash;
+        var loaded = await Task.Run(() =>
+        {
+            // Older installs keep config.json: convert it before reading. The service does the same.
+            LegacyMigration.Run();
+            var loadedPolicy = PolicyStore.LoadPolicy() ?? new PolicyDocument();
+            var loadedSecrets = PolicyStore.LoadSecrets();
+            var loadedUi = PolicyStore.LoadUi();
+            // The profile copies of the PIN data are readable without admin rights: remove them once the shared
+            // files hold everything.
+            if (File.Exists(WapPaths.PolicyFile))
+            {
+                LegacyMigration.CleanUserProfile();
+            }
+
+            return (loadedPolicy, loadedSecrets, loadedUi);
+        });
+
+        policy = loaded.loadedPolicy;
+        secrets = loaded.loadedSecrets;
+        ui = loaded.loadedUi;
         OnPropertyChanged(nameof(CloseToBackground));
         OnPropertyChanged(nameof(CloseAppsOnLock));
         OnPropertyChanged(nameof(StartWithWindows));
@@ -360,21 +395,13 @@ public class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasAppPin));
         OnPropertyChanged(nameof(EnableLaunchGate));
         OnPropertyChanged(nameof(UpdateChannel));
-        if (loaded.GlobalHotkeys.Count > 0)
-        {
-            foreach (var hotkey in loaded.GlobalHotkeys)
-            {
-                config.GlobalHotkeys[hotkey.Key] = hotkey.Value;
-            }
-        }
-        config.ProtectedApps.Clear();
-        config.ProtectedApps.AddRange(loaded.ProtectedApps);
 
         foreach (var hotkey in Hotkeys)
         {
-            if (config.GlobalHotkeys.TryGetValue(hotkey.ActionKey, out var value))
+            var saved = ui.GlobalHotkeys.FirstOrDefault(item => item.Action == hotkey.ActionKey);
+            if (saved is not null)
             {
-                hotkey.HotkeyText = value;
+                hotkey.HotkeyText = saved.Text;
             }
         }
 
@@ -382,11 +409,15 @@ public class MainViewModel : ObservableObject
         RefreshApps();
         ValidateHotkeys();
         SyncStartupPreference();
-        if (await SyncProtectionRulesAsync())
-        {
-            UpdateStatus();
-        }
+
+        statusReader.Changed += OnServiceStatusChanged;
+        statusReader.Start();
+        serviceStatus = ServiceStatusReader.ReadOnce();
+        ApplyServiceStatusToApps();
+        NotifyProtectionCardChanged();
+        UpdateStatus();
         await RefreshServiceStatusAsync();
+        _ = BackfillFingerprintsAsync();
     }
 
     public async Task RefreshServiceStatusAsync()
@@ -403,19 +434,20 @@ public class MainViewModel : ObservableObject
             await ProtectionService.RestartServiceAsync();
             await RefreshServiceStatusAsync();
 
-            try
+            // A restarted service re-reads the policy on its own; wait until it reports the saved revision.
+            policyNotifier.Signal();
+            if (await policyNotifier.WaitForAppliedAsync(policy.Revision, TimeSpan.FromSeconds(8)))
             {
-                await protectionService.RequestPolicyResyncAsync();
                 LastPolicySyncFailed = false;
                 LastPolicySyncError = string.Empty;
                 ServiceState = ProtectionServiceState.Running;
-                ReportStatus("보호 서비스를 다시 시작하고 정책을 동기화했습니다.", NotificationSeverity.Success);
+                ReportStatus("보호 서비스를 다시 시작하고 정책을 적용했습니다.", NotificationSeverity.Success);
             }
-            catch (Exception syncEx)
+            else
             {
                 LastPolicySyncFailed = true;
-                LastPolicySyncError = syncEx.Message;
-                ReportStatus($"보호 서비스는 시작했지만 정책 동기화에 실패했습니다. ({syncEx.Message})", NotificationSeverity.Warning);
+                LastPolicySyncError = ServiceNotAppliedMessage;
+                ReportStatus($"보호 서비스는 시작했지만 정책 적용을 확인하지 못했습니다. ({ServiceNotAppliedMessage})", NotificationSeverity.Warning);
             }
         }
         catch (Exception ex)
@@ -425,24 +457,6 @@ public class MainViewModel : ObservableObject
         }
     }
 
-    public async Task SetProtectionEnabledAsync(bool enabled)
-    {
-        ProtectedAppProcessCloseResult? closeResult = enabled
-            ? await CloseAppsBeforeLockAsync(config.ProtectedApps)
-            : null;
-
-        foreach (var app in config.ProtectedApps)
-        {
-            app.Enabled = enabled;
-        }
-
-        ProtectionEnabled = LockRulesActive();
-        RefreshApps();
-        if (!await SyncProtectionRulesAsync()) return;
-        UpdateStatus();
-        SetCloseResultStatus(closeResult);
-    }
-
     public async Task AddAppAsync(string path)
     {
         await AddAppsAsync(new[] { path });
@@ -450,7 +464,7 @@ public class MainViewModel : ObservableObject
 
     public async Task AddAppsAsync(IEnumerable<string> paths)
     {
-        var added = new List<ProtectedApp>();
+        var added = new List<AppPolicy>();
         var skippedDuplicates = 0;
         var missingFiles = 0;
 
@@ -463,7 +477,7 @@ public class MainViewModel : ObservableObject
             }
 
             var fullPath = Path.GetFullPath(rawPath);
-            if (config.ProtectedApps.Any(app =>
+            if (policy.Apps.Any(app =>
                 !app.IsPackaged &&
                 !string.IsNullOrWhiteSpace(app.Path) &&
                 string.Equals(Path.GetFullPath(app.Path), fullPath, StringComparison.OrdinalIgnoreCase)))
@@ -472,16 +486,21 @@ public class MainViewModel : ObservableObject
                 continue;
             }
 
-            var app = new ProtectedApp
+            var (size, hash) = await FileFingerprint.ComputeAsync(fullPath);
+            var app = new AppPolicy
             {
+                Id = Guid.NewGuid().ToString("N"),
                 Name = Path.GetFileNameWithoutExtension(fullPath) is { Length: > 0 } baseName
                     ? baseName
                     : Path.GetFileName(fullPath),
                 Path = fullPath,
                 ExecutableName = Path.GetFileName(fullPath),
-                Enabled = true,
+                Locked = true,
+                LockedAtUtc = NowUtcText(),
+                FileSize = size,
+                Sha256 = hash,
             };
-            config.ProtectedApps.Add(app);
+            policy.Apps.Add(app);
             added.Add(app);
         }
 
@@ -499,7 +518,6 @@ public class MainViewModel : ObservableObject
             return;
         }
 
-        var closeResult = await CloseAppsBeforeLockAsync(added);
         RefreshApps();
         if (!await SyncProtectionRulesAsync()) return;
         ReportStatus(
@@ -507,7 +525,6 @@ public class MainViewModel : ObservableObject
                 ? $"{added[0].Name} 앱을 추가하고 잠갔습니다."
                 : $"앱 {added.Count}개를 추가하고 잠갔습니다.",
             NotificationSeverity.Success);
-        SetCloseResultStatus(closeResult);
     }
 
     public async Task AddPackagedAppAsync(PackagedAppInfo app)
@@ -517,7 +534,7 @@ public class MainViewModel : ObservableObject
 
     public async Task AddPackagedAppsAsync(IEnumerable<PackagedAppInfo> apps)
     {
-        var added = new List<ProtectedApp>();
+        var added = new List<AppPolicy>();
         var skippedDuplicates = 0;
         var invalidCount = 0;
 
@@ -532,7 +549,7 @@ public class MainViewModel : ObservableObject
                 }
 
                 var fullPath = Path.GetFullPath(app.Path);
-                if (config.ProtectedApps.Any(item =>
+                if (policy.Apps.Any(item =>
                     !item.IsPackaged &&
                     !string.IsNullOrWhiteSpace(item.Path) &&
                     string.Equals(Path.GetFullPath(item.Path), fullPath, StringComparison.OrdinalIgnoreCase)))
@@ -541,15 +558,20 @@ public class MainViewModel : ObservableObject
                     continue;
                 }
 
-                var model = new ProtectedApp
+                var (size, hash) = await FileFingerprint.ComputeAsync(fullPath);
+                var model = new AppPolicy
                 {
+                    Id = Guid.NewGuid().ToString("N"),
                     Name = string.IsNullOrWhiteSpace(app.Name) ? Path.GetFileName(fullPath) : app.Name,
                     Path = fullPath,
                     IsPackaged = false,
                     ExecutableName = string.IsNullOrWhiteSpace(app.ExecutableName) ? Path.GetFileName(fullPath) : app.ExecutableName,
-                    Enabled = true,
+                    Locked = true,
+                    LockedAtUtc = NowUtcText(),
+                    FileSize = size,
+                    Sha256 = hash,
                 };
-                config.ProtectedApps.Add(model);
+                policy.Apps.Add(model);
                 added.Add(model);
                 continue;
             }
@@ -560,7 +582,7 @@ public class MainViewModel : ObservableObject
                 continue;
             }
 
-            if (config.ProtectedApps.Any(item =>
+            if (policy.Apps.Any(item =>
                 string.Equals(item.AppUserModelId, app.AppUserModelId, StringComparison.OrdinalIgnoreCase) ||
                 (!string.IsNullOrWhiteSpace(item.ExecutableName) &&
                     string.Equals(item.ExecutableName, app.ExecutableName, StringComparison.OrdinalIgnoreCase))))
@@ -569,17 +591,19 @@ public class MainViewModel : ObservableObject
                 continue;
             }
 
-            var packagedModel = new ProtectedApp
+            var packagedModel = new AppPolicy
             {
+                Id = Guid.NewGuid().ToString("N"),
                 Name = app.Name,
                 Path = app.AppUserModelId,
                 IsPackaged = true,
                 PackageFamilyName = app.PackageFamilyName,
                 AppUserModelId = app.AppUserModelId,
                 ExecutableName = app.ExecutableName,
-                Enabled = true,
+                Locked = true,
+                LockedAtUtc = NowUtcText(),
             };
-            config.ProtectedApps.Add(packagedModel);
+            policy.Apps.Add(packagedModel);
             added.Add(packagedModel);
         }
 
@@ -597,7 +621,6 @@ public class MainViewModel : ObservableObject
             return;
         }
 
-        var closeResult = await CloseAppsBeforeLockAsync(added);
         RefreshApps();
         if (!await SyncProtectionRulesAsync()) return;
         ReportStatus(
@@ -605,7 +628,6 @@ public class MainViewModel : ObservableObject
                 ? $"{added[0].Name} 앱을 추가하고 잠갔습니다."
                 : $"앱 {added.Count}개를 추가하고 잠갔습니다.",
             NotificationSeverity.Success);
-        SetCloseResultStatus(closeResult);
     }
 
     public async Task RemoveSelectedAppAsync()
@@ -629,7 +651,7 @@ public class MainViewModel : ObservableObject
             .Select(FindModel)
             .Where(model => model is not null)
             .Distinct()
-            .Cast<ProtectedApp>()
+            .Cast<AppPolicy>()
             .ToList();
 
         if (targets.Count == 0)
@@ -639,7 +661,8 @@ public class MainViewModel : ObservableObject
 
         foreach (var model in targets)
         {
-            config.ProtectedApps.Remove(model);
+            policy.Apps.Remove(model);
+            secrets.RemoveAppPin(model.Id);
         }
 
         if (SelectedApp is not null && FindModel(SelectedApp) is null)
@@ -669,7 +692,7 @@ public class MainViewModel : ObservableObject
             return;
         }
 
-        await SetAppsLockedCoreAsync(new[] { model }, !model.Enabled);
+        await SetAppsLockedCoreAsync(new[] { model }, !model.Locked);
     }
 
     public async Task SetAppLockedAsync(ProtectedAppViewModel item, bool locked)
@@ -689,7 +712,7 @@ public class MainViewModel : ObservableObject
             .Select(FindModel)
             .Where(model => model is not null)
             .Distinct()
-            .Cast<ProtectedApp>()
+            .Cast<AppPolicy>()
             .ToList();
 
         if (targets.Count == 0)
@@ -700,7 +723,7 @@ public class MainViewModel : ObservableObject
         await SetAppsLockedCoreAsync(targets, enabled);
     }
 
-    private async Task SetAppsLockedCoreAsync(IReadOnlyList<ProtectedApp> targets, bool locking)
+    private async Task SetAppsLockedCoreAsync(IReadOnlyList<AppPolicy> targets, bool locking)
     {
         if (targets.Count == 0)
         {
@@ -712,13 +735,9 @@ public class MainViewModel : ObservableObject
             autoLockSuppressedUntilActive = true;
         }
 
-        var closeResult = locking
-            ? await CloseAppsBeforeLockAsync(targets)
-            : null;
-
         foreach (var model in targets)
         {
-            model.Enabled = locking;
+            SetLocked(model, locking);
         }
 
         RefreshApps();
@@ -728,12 +747,13 @@ public class MainViewModel : ObservableObject
             ? (locking ? $"{targets[0].Name} 앱을 잠갔습니다." : $"{targets[0].Name} 앱을 열었습니다.")
             : (locking ? $"선택한 앱 {targets.Count}개를 잠갔습니다." : $"선택한 앱 {targets.Count}개를 열었습니다.");
         ReportStatus(message, NotificationSeverity.Success);
-        SetCloseResultStatus(closeResult);
     }
 
+    /// <param name="closeRunningApps">Kept for callers; closing running apps on lock is the service's job (CloseAppsOnLock).</param>
     public async Task SetListedAppsEnabledAsync(bool enabled, bool closeRunningApps = true)
     {
-        if (config.ProtectedApps.Count == 0)
+        _ = closeRunningApps;
+        if (policy.Apps.Count == 0)
         {
             ReportStatus(enabled ? "잠글 앱이 없습니다." : "열 앱이 없습니다.", NotificationSeverity.Info);
             return;
@@ -744,47 +764,42 @@ public class MainViewModel : ObservableObject
             autoLockSuppressedUntilActive = true;
         }
 
-        ProtectedAppProcessCloseResult? closeResult = enabled && closeRunningApps
-            ? await CloseAppsBeforeLockAsync(config.ProtectedApps)
-            : null;
-
-        foreach (var app in config.ProtectedApps)
+        foreach (var app in policy.Apps)
         {
-            app.Enabled = enabled;
+            SetLocked(app, enabled);
         }
 
         RefreshApps();
         if (!await SyncProtectionRulesAsync()) return;
         ReportStatus(
             enabled
-                ? $"앱 {config.ProtectedApps.Count}개를 모두 잠갔습니다."
-                : $"앱 {config.ProtectedApps.Count}개를 모두 열었습니다.",
+                ? $"앱 {policy.Apps.Count}개를 모두 잠갔습니다."
+                : $"앱 {policy.Apps.Count}개를 모두 열었습니다.",
             NotificationSeverity.Success);
-        SetCloseResultStatus(closeResult);
     }
 
     public async Task<bool> SavePreferencesAsync(bool closeToBackground, bool closeAppsOnLock,
         bool startWithWindows, int idleLockMinutes, bool enableLaunchGate, string updateChannel)
     {
-        var previousCloseToBackground = config.CloseToBackground;
-        var previousCloseAppsOnLock = config.CloseAppsOnLock;
-        var previousStartWithWindows = config.StartWithWindows;
-        var previousIdleLockMinutes = config.IdleLockMinutes;
-        var previousEnableLaunchGate = config.EnableLaunchGate;
-        var previousUpdateChannel = config.UpdateChannel;
+        var previousCloseToBackground = ui.CloseToBackground;
+        var previousCloseAppsOnLock = policy.CloseAppsOnLock;
+        var previousStartWithWindows = ui.StartWithWindows;
+        var previousIdleLockMinutes = ui.IdleLockMinutes;
+        var previousEnableLaunchGate = policy.EnableLaunchGate;
+        var previousUpdateChannel = ui.UpdateChannel;
 
         try
         {
             await Task.Run(() => StartupService.SetEnabled(startWithWindows));
-            config.UpdateChannel = updateChannel;
+            ui.UpdateChannel = updateChannel;
             CloseToBackground = closeToBackground;
             CloseAppsOnLock = closeAppsOnLock;
             StartWithWindows = startWithWindows;
             IdleLockMinutes = idleLockMinutes;
-            config.EnableLaunchGate = enableLaunchGate;
+            policy.EnableLaunchGate = enableLaunchGate;
             OnPropertyChanged(nameof(EnableLaunchGate));
             OnPropertyChanged(nameof(UpdateChannel));
-            if (!await SaveAndResyncPolicyAsync())
+            if (!await CommitAsync())
             {
                 RestorePreferences(
                     previousCloseToBackground,
@@ -821,19 +836,19 @@ public class MainViewModel : ObservableObject
         bool enableLaunchGate,
         string updateChannel)
     {
-        config.UpdateChannel = updateChannel;
+        ui.UpdateChannel = updateChannel;
         CloseToBackground = closeToBackground;
         CloseAppsOnLock = closeAppsOnLock;
         StartWithWindows = startWithWindows;
         IdleLockMinutes = idleLockMinutes;
-        config.EnableLaunchGate = enableLaunchGate;
+        policy.EnableLaunchGate = enableLaunchGate;
         OnPropertyChanged(nameof(EnableLaunchGate));
         OnPropertyChanged(nameof(UpdateChannel));
     }
 
     public async Task<bool> AutoLockIfIdleAsync(TimeSpan idleTime)
     {
-        if (config.IdleLockMinutes <= 0)
+        if (ui.IdleLockMinutes <= 0)
         {
             return false;
         }
@@ -845,75 +860,48 @@ public class MainViewModel : ObservableObject
         }
 
         if (autoLockSuppressedUntilActive ||
-            idleTime < TimeSpan.FromMinutes(config.IdleLockMinutes) ||
-            config.ProtectedApps.Count == 0 ||
-            config.ProtectedApps.All(app => app.Enabled))
+            idleTime < TimeSpan.FromMinutes(ui.IdleLockMinutes) ||
+            policy.Apps.Count == 0 ||
+            policy.Apps.All(app => app.Locked))
         {
             return false;
         }
 
-        var closeResult = await CloseAppsBeforeLockAsync(config.ProtectedApps);
-        foreach (var app in config.ProtectedApps)
+        foreach (var app in policy.Apps)
         {
-            app.Enabled = true;
+            SetLocked(app, true);
         }
 
         RefreshApps();
         if (!await SyncProtectionRulesAsync()) return false;
-        ReportStatus($"유휴 상태 {config.IdleLockMinutes}분 경과로 보호 앱을 자동 잠금했습니다.", NotificationSeverity.Info);
-        SetCloseResultStatus(closeResult);
+        ReportStatus($"유휴 상태 {ui.IdleLockMinutes}분 경과로 보호 앱을 자동 잠금했습니다.", NotificationSeverity.Info);
         return true;
-    }
-
-    private async Task<ProtectedAppProcessCloseResult?> CloseAppsBeforeLockAsync(IEnumerable<ProtectedApp> apps)
-    {
-        if (!config.CloseAppsOnLock)
-        {
-            return null;
-        }
-
-        StatusText = "실행 중인 보호 앱을 종료하는 중입니다...";
-        return await protectedAppProcessService.CloseRunningAppsAsync(apps);
-    }
-
-    private void SetCloseResultStatus(ProtectedAppProcessCloseResult? result)
-    {
-        if (result is null)
-        {
-            return;
-        }
-
-        if (result.Value.Failed == 0)
-        {
-            ReportStatus($"실행 중인 앱 {result.Value.Closed}개를 종료하고 잠갔습니다.", NotificationSeverity.Info);
-        }
-        else
-        {
-            ReportStatus($"잠금은 적용했지만, 앱 {result.Value.Failed}개를 종료하지 못했습니다.", NotificationSeverity.Warning);
-        }
     }
 
     public async Task SetAppPinAsync(string pin)
     {
-        var hash = PinHasher.CreateHash(pin);
-        var previous = (config.AppPinSalt, config.AppPinHash);
-        config.AppPinSalt = hash.Salt;
-        config.AppPinHash = hash.Hash;
+        var previous = secrets.AppPin;
+        secrets.AppPin = PinHash.Create(pin);
         try
         {
-            await SaveAsync();
+            if (!await CommitAsync(throwOnSaveFailure: true))
+            {
+                secrets.AppPin = previous;
+                return;
+            }
+
             OnPropertyChanged(nameof(HasAppPin));
         }
         catch
         {
-            (config.AppPinSalt, config.AppPinHash) = previous;
+            secrets.AppPin = previous;
             throw;
         }
     }
 
     public bool VerifyAppPin(string pin)
     {
-        return PinHasher.Verify(pin, config.AppPinSalt, config.AppPinHash);
+        return PinHash.Verify(pin, secrets.AppPin);
     }
 
     public async void SetHotkey(string actionKey, string hotkeyText)
@@ -937,16 +925,16 @@ public class MainViewModel : ObservableObject
             return false;
         }
 
-        config.GlobalHotkeys[actionKey] = hotkeyText;
         try
         {
-            await SaveAsync();
+            CaptureHotkeys();
+            await uiStore.SaveAsync(ui);
             return true;
         }
         catch (Exception ex)
         {
             hotkey.HotkeyText = previousText;
-            config.GlobalHotkeys[actionKey] = previousText;
+            CaptureHotkeys();
             ValidateHotkeys();
             hotkey.ValidationMessage = $"단축키를 저장할 수 없습니다: {ex.Message}";
             ReportStatus($"단축키를 저장할 수 없습니다: {ex.Message}", NotificationSeverity.Error);
@@ -995,61 +983,98 @@ public class MainViewModel : ObservableObject
         ReportStatus($"단축키 등록 실패: {hotkey.DisplayName} ({hotkey.HotkeyText})", NotificationSeverity.Warning);
     }
 
+    // ---- saving ----------------------------------------------------------------------------------------
+
     private async Task<bool> SyncProtectionRulesAsync()
     {
-        config.UnlockUntil = null;
-        config.ProtectionEnabled = LockRulesActive();
-        ProtectionEnabled = config.ProtectionEnabled;
-        return await SaveAndResyncPolicyAsync();
+        ProtectionEnabled = LockRulesActive();
+        return await CommitAsync();
     }
 
-    private async Task<bool> SaveAndResyncPolicyAsync()
+    /// <summary>
+    /// Writes policy.json (+ secrets.json, ui.json) and waits for the service to report the revision as applied.
+    /// Returns false only when nothing could be saved; a service that is late is reported but the save stands.
+    /// </summary>
+    private async Task<bool> CommitAsync(bool throwOnSaveFailure = false)
     {
+        await commitGate.WaitAsync();
         try
         {
-            await SaveAsync();
-        }
-        catch (Exception ex)
-        {
-            ReportStatus($"보호 정책을 저장할 수 없습니다: {ex.Message}", NotificationSeverity.Error);
-            return false;
-        }
+            long revision;
+            try
+            {
+                CaptureHotkeys();
+                // Serialize from a snapshot so edits made while the files are being written cannot tear it.
+                var policySnapshot = Clone(policy);
+                var secretsSnapshot = Clone(secrets);
+                var uiSnapshot = Clone(ui);
+                revision = await Task.Run(() =>
+                {
+                    PolicyStore.SaveUi(uiSnapshot);
+                    return PolicyStore.Save(policySnapshot, secretsSnapshot);
+                });
+                policy.Revision = revision;
+            }
+            catch (Exception ex)
+            {
+                App.WriteCrashLog(ex);
+                ReportStatus($"보호 정책을 저장할 수 없습니다: {ex.Message}", NotificationSeverity.Error);
+                if (throwOnSaveFailure)
+                {
+                    throw;
+                }
 
-        try
-        {
-            await protectionService.RequestPolicyResyncAsync();
-            LastPolicySyncFailed = false;
-            LastPolicySyncError = string.Empty;
-            ServiceState = ProtectionServiceState.Running;
+                return false;
+            }
+
+            OnPropertyChanged(nameof(LockedAppCount));
+            var applied = await policyNotifier.SignalAndWaitAsync(revision);
+            if (applied)
+            {
+                LastPolicySyncFailed = false;
+                LastPolicySyncError = string.Empty;
+                ServiceState = ProtectionServiceState.Running;
+                serviceStatus = ServiceStatusReader.ReadOnce();
+                ApplyServiceStatusToApps();
+            }
+            else
+            {
+                LastPolicySyncFailed = true;
+                LastPolicySyncError = ServiceNotAppliedMessage;
+                _ = RefreshServiceStatusAsync();
+                ReportStatus(ServiceNotAppliedMessage, NotificationSeverity.Warning);
+            }
+
+            NotifyProtectionCardChanged();
             return true;
         }
-        catch (Exception ex)
+        finally
         {
-            // The service re-reads the saved policy every few seconds on its own, so a failed immediate
-            // request only delays the change; report the reason without treating the save as failed.
-            LastPolicySyncFailed = true;
-            LastPolicySyncError = ex.Message;
-            _ = RefreshServiceStatusAsync();
-            ReportStatus(
-                $"보호 정책을 저장했습니다. 즉시 적용 요청은 실패했지만 서비스가 실행 중이면 몇 초 안에 자동 반영됩니다. ({ex.Message})",
-                NotificationSeverity.Warning);
-            return true;
+            commitGate.Release();
         }
     }
 
-    private async Task SaveAsync()
+    private void CaptureHotkeys()
     {
-        config.ProtectionEnabled = ProtectionEnabled;
-        config.UnlockUntil = null;
-        config.GlobalHotkeys = Hotkeys.ToDictionary(item => item.ActionKey, item => item.HotkeyText);
-        await settingsStore.SaveAsync(config);
+        ui.GlobalHotkeys = Hotkeys
+            .Select(item => new HotkeyEntry { Action = item.ActionKey, Text = item.HotkeyText })
+            .ToList();
+    }
+
+    private static T Clone<T>(T value) where T : class
+    {
+        var serializer = new DataContractJsonSerializer(typeof(T));
+        using var stream = new MemoryStream();
+        serializer.WriteObject(stream, value);
+        stream.Position = 0;
+        return (T)serializer.ReadObject(stream)!;
     }
 
     private void SyncStartupPreference()
     {
         // Re-registers the logon task on every start (migrates older tasks to the fixed settings)
         // off the UI thread so schtasks.exe never delays the PIN prompt.
-        var startWithWindows = config.StartWithWindows;
+        var startWithWindows = ui.StartWithWindows;
         _ = Task.Run(() =>
         {
             try
@@ -1062,6 +1087,75 @@ public class MainViewModel : ObservableObject
             }
         });
     }
+
+    // Policies migrated from older builds carry no fingerprint: fill it in so the service can recognise
+    // renamed or copied executables.
+    private async Task BackfillFingerprintsAsync()
+    {
+        try
+        {
+            var missing = policy.Apps
+                .Where(app => !app.IsPackaged && app.FileSize == 0 && !string.IsNullOrWhiteSpace(app.Path) && File.Exists(app.Path))
+                .ToList();
+            if (missing.Count == 0)
+            {
+                return;
+            }
+
+            var changed = false;
+            foreach (var app in missing)
+            {
+                var (size, hash) = await FileFingerprint.ComputeAsync(app.Path);
+                if (size > 0)
+                {
+                    app.FileSize = size;
+                    app.Sha256 = hash;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                await CommitAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            App.WriteCrashLog(ex);
+        }
+    }
+
+    // ---- service status ------------------------------------------------------------------------------------
+
+    private void OnServiceStatusChanged(StatusDocument? status)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            serviceStatus = status;
+            ApplyServiceStatusToApps();
+            NotifyProtectionCardChanged();
+            _ = RefreshServiceStatusAsync();
+        });
+    }
+
+    private void ApplyServiceStatusToApps()
+    {
+        foreach (var item in Apps)
+        {
+            var reported = serviceStatus?.Apps.FirstOrDefault(app => app.Id == item.AppId);
+            item.Rule = reported?.Rule ?? string.Empty;
+        }
+    }
+
+    private void NotifyProtectionCardChanged()
+    {
+        OnPropertyChanged(nameof(ProtectionServiceText));
+        OnPropertyChanged(nameof(ProtectionRevisionText));
+        OnPropertyChanged(nameof(ProtectionAgentText));
+        OnPropertyChanged(nameof(ProtectionTamperText));
+    }
+
+    // ---- list ---------------------------------------------------------------------------------------------------
 
     private void RefreshApps()
     {
@@ -1084,8 +1178,8 @@ public class MainViewModel : ObservableObject
         Apps.Clear();
 
         var apps = string.IsNullOrWhiteSpace(SearchText)
-            ? config.ProtectedApps
-            : config.ProtectedApps
+            ? policy.Apps
+            : policy.Apps
                 .Where(app =>
                     app.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
                     app.Path.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
@@ -1100,17 +1194,19 @@ public class MainViewModel : ObservableObject
             var identity = GetAppIdentity(app);
             var item = new ProtectedAppViewModel
             {
+                AppId = app.Id,
                 Name = app.Name,
                 Identity = identity,
                 Path = GetDisplayPath(app),
-                IsLocked = app.Enabled,
+                IsLocked = app.Locked,
                 PolicySummary = BuildPolicySummary(app),
                 IsPackaged = app.IsPackaged,
                 PackageFamilyName = app.PackageFamilyName,
                 RawPath = app.Path,
-                CanConfigureLaunchPolicy = !app.IsPackaged && !ProtectionService.UsesWindowOnlyBlocking(app),
+                CanConfigureLaunchPolicy = !app.IsPackaged && !PolicyRules.IsWindowMode(app),
                 IsSelected = previousSelectedIdentities.Contains(identity),
                 Icon = previousIcons.TryGetValue(identity, out var cachedIcon) ? cachedIcon : null,
+                Rule = serviceStatus?.Apps.FirstOrDefault(reported => reported.Id == app.Id)?.Rule ?? string.Empty,
             };
 
             Apps.Add(item);
@@ -1138,26 +1234,27 @@ public class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(LockedSummarySentence));
         OnPropertyChanged(nameof(StatusSentence));
         OnPropertyChanged(nameof(ServiceWarningSentence));
+        OnPropertyChanged(nameof(ProtectionServiceText));
     }
 
-    private static string BuildPolicySummary(ProtectedApp app)
+    private static string BuildPolicySummary(AppPolicy app)
     {
         var parts = new List<string>(3);
 
-        if (app.LaunchAllowedMinutes > 0)
+        if (app.Launch.AllowedMinutes > 0)
         {
-            parts.Add(app.LaunchAllowedMinutes % 60 == 0
-                ? $"{app.LaunchAllowedMinutes / 60}시간 유예"
-                : $"{app.LaunchAllowedMinutes}분 유예");
+            parts.Add(app.Launch.AllowedMinutes % 60 == 0
+                ? $"{app.Launch.AllowedMinutes / 60}시간 유예"
+                : $"{app.Launch.AllowedMinutes}분 유예");
         }
 
-        if (app.LaunchLockStartMinute is >= 0 and < 1440 &&
-            app.LaunchLockEndMinute is >= 0 and < 1440)
+        if (app.Launch.LockStartMinute is >= 0 and < 1440 &&
+            app.Launch.LockEndMinute is >= 0 and < 1440)
         {
-            parts.Add($"{FormatMinute(app.LaunchLockStartMinute.Value)}–{FormatMinute(app.LaunchLockEndMinute.Value)}");
+            parts.Add($"{FormatMinute(app.Launch.LockStartMinute.Value)}–{FormatMinute(app.Launch.LockEndMinute.Value)}");
         }
 
-        if (!string.IsNullOrEmpty(app.LaunchPinHash))
+        if (app.Launch.HasOwnPin)
         {
             parts.Add("전용 PIN");
         }
@@ -1170,20 +1267,40 @@ public class MainViewModel : ObservableObject
         return new TimeOnly(minute / 60, minute % 60).ToString("HH:mm", CultureInfo.InvariantCulture);
     }
 
-    private ProtectedApp? FindModel(ProtectedAppViewModel viewModel)
+    private static string FormatLocal(string utcText)
     {
-        return config.ProtectedApps.FirstOrDefault(app =>
+        return DateTime.TryParse(utcText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var utc)
+            ? utc.ToLocalTime().ToString("MM-dd HH:mm", CultureInfo.InvariantCulture)
+            : utcText;
+    }
+
+    private static string NowUtcText() => DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+
+    // Records when an app becomes locked, so the service knows which already-running processes to hide.
+    private static void SetLocked(AppPolicy app, bool locked)
+    {
+        if (locked && !app.Locked)
+        {
+            app.LockedAtUtc = NowUtcText();
+        }
+
+        app.Locked = locked;
+    }
+
+    private AppPolicy? FindModel(ProtectedAppViewModel viewModel)
+    {
+        return policy.Apps.FirstOrDefault(app =>
             string.Equals(GetAppIdentity(app), viewModel.Identity, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string GetAppIdentity(ProtectedApp app)
+    private static string GetAppIdentity(AppPolicy app)
     {
         return app.IsPackaged && !string.IsNullOrWhiteSpace(app.AppUserModelId)
             ? app.AppUserModelId
             : app.Path;
     }
 
-    private static string GetDisplayPath(ProtectedApp app)
+    private static string GetDisplayPath(AppPolicy app)
     {
         if (app.IsPackaged)
         {
@@ -1195,19 +1312,9 @@ public class MainViewModel : ObservableObject
         return app.Path;
     }
 
-    private static string GetExecutableName(ProtectedApp app)
-    {
-        if (!string.IsNullOrWhiteSpace(app.ExecutableName))
-        {
-            return app.ExecutableName;
-        }
-
-        return string.IsNullOrWhiteSpace(app.Path) ? string.Empty : Path.GetFileName(app.Path);
-    }
-
     private bool LockRulesActive()
     {
-        return config.ProtectedApps.Any(app => app.Enabled);
+        return policy.Apps.Any(app => app.Locked);
     }
 
     private void UpdateStatus()

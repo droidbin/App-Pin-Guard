@@ -13,10 +13,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
-    <Version>2.0.0-beta.13</Version>
+    <Version>2.0.0</Version>
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
     <FileVersion>2.0.0.0</FileVersion>
-    <InformationalVersion>2.0.0-beta.13</InformationalVersion>
+    <InformationalVersion>2.0.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,8 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\LaunchGate\GateProtocol.cs" Link="GateProtocol.cs" />
-    <Compile Include="..\Shared\ProductBrand.cs" Link="ProductBrand.cs" />
+    <!-- One schema, one serializer, one set of rules for every component (C# 5 sources, linked as-is). -->
+    <Compile Include="..\Shared\*.cs" Link="Shared\%(Filename)%(Extension)" />
     <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="8.0.32" />
     <PackageReference Include="Avalonia" Version="11.3.23" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.23" />

@@ -1,3 +1,5 @@
+> DESIGN-backend-redesign.md §7.1로 구현됨
+
 # 실행 파일 이름 변경·복사 우회 설계
 
 ## 위협

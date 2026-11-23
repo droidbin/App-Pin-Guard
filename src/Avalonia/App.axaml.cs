@@ -11,7 +11,6 @@ namespace WindowsAppProtector;
 
 public partial class App : Application
 {
-    private static readonly object ProtectionLogLock = new();
     private MainWindow? _mainWindow;
 
     internal const string BackgroundArgument = "--background";
@@ -132,47 +131,15 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    private static string UiLogPath => Path.Combine(WapPaths.LogsDir, "ui.log");
+
     internal static void WriteCrashLog(Exception exception)
     {
-        try
-        {
-            var logDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "Windows App Protector",
-                "Logs");
-            Directory.CreateDirectory(logDirectory);
-            var logPath = Path.Combine(logDirectory, "winui-crash.log");
-            File.AppendAllText(
-                logPath,
-                $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}] {exception}\r\n\r\n");
-        }
-        catch
-        {
-        }
+        WapLog.FatalException("ui", UiLogPath, "ui.exception", exception);
     }
 
     internal static void WriteProtectionLog(string eventName)
     {
-        lock (ProtectionLogLock)
-        {
-            try
-            {
-                var directory = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                    "Windows App Protector",
-                    "Logs");
-                Directory.CreateDirectory(directory);
-                var path = Path.Combine(directory, "protection.log");
-                var log = new FileInfo(path);
-                if (log.Exists && log.Length >= 256 * 1024)
-                {
-                    File.Move(path, path + ".previous", overwrite: true);
-                }
-
-                File.AppendAllText(path, $"[{DateTimeOffset.Now:O}] {eventName}{Environment.NewLine}");
-            }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-        }
+        WapLog.Info("ui", UiLogPath, eventName);
     }
 }

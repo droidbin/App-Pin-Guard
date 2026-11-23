@@ -255,10 +255,7 @@ public sealed class GitHubUpdateService
 
         try
         {
-            var tokenPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "Windows App Protector",
-                "github-token.txt");
+            var tokenPath = Path.Combine(WapPaths.Root, "github-token.txt");
             return File.Exists(tokenPath) ? File.ReadAllText(tokenPath).Trim() : string.Empty;
         }
         catch

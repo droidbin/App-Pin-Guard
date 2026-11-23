@@ -30,7 +30,9 @@ public partial class MainWindow : Window
     private readonly GitHubUpdateService _updateService = new();
     private readonly IdleMonitor _idleMonitor = new();
     private readonly Win32MessageWindow _messageWindow;
-    private readonly WindowGuardService _windowGuardService;
+    // Housekeeping tick (tray icon, session notifications, idle lock). Window hiding is the service's job now.
+    private readonly DispatcherTimer _maintenanceTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
+    private bool _maintenanceRunning;
     private readonly Dictionary<int, string> _registeredHotkeys = new();
     private readonly bool _startInBackground;
 
@@ -109,14 +111,8 @@ public partial class MainWindow : Window
         UpdateTrayMenu();
         _messageWindow.AddTrayIcon();
 
-        _windowGuardService = new WindowGuardService(
-            getOwnWindowHandle: GetWindowHandle,
-            isInitialized: () => _initialized && !_isClosing,
-            getLockedExecutables: ViewModel.GetLockedExecutableNames,
-            getLockedPackageFamilies: ViewModel.GetLockedPackageFamilyNames);
-        _windowGuardService.TickStarting += OnWindowGuardTickStarting;
-        _windowGuardService.BeforeWindowScanAsync += OnWindowGuardBeforeScanAsync;
-        _windowGuardService.Start();
+        _maintenanceTimer.Tick += OnMaintenanceTick;
+        _maintenanceTimer.Start();
 
         SizeChanged += OnWindowSizeChanged;
         Closing += OnWindowClosing;
@@ -544,26 +540,45 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnWindowGuardTickStarting()
+    private async void OnMaintenanceTick(object? sender, EventArgs e)
     {
-        if (!_messageWindow.IsSessionNotificationsRegistered)
+        if (_maintenanceRunning)
         {
-            _messageWindow.EnsureSessionNotificationsRegistered();
+            return;
         }
 
-        if (!_messageWindow.IsTrayIconAdded)
+        _maintenanceRunning = true;
+        try
         {
-            _messageWindow.EnsureTrayIcon();
-        }
-    }
+            if (!_messageWindow.IsSessionNotificationsRegistered)
+            {
+                _messageWindow.EnsureSessionNotificationsRegistered();
+            }
 
-    private Task OnWindowGuardBeforeScanAsync()
-    {
-        return _idleMonitor.CheckIdleAsync(
-            ViewModel.AutoLockIfIdleAsync,
-            () => ViewModel.IdleLockMinutes,
-            () => _isSessionUnlocked,
-            HideToTray);
+            if (!_messageWindow.IsTrayIconAdded)
+            {
+                _messageWindow.EnsureTrayIcon();
+            }
+
+            if (!_initialized || _isClosing)
+            {
+                return;
+            }
+
+            await _idleMonitor.CheckIdleAsync(
+                ViewModel.AutoLockIfIdleAsync,
+                () => ViewModel.IdleLockMinutes,
+                () => _isSessionUnlocked,
+                HideToTray);
+        }
+        catch (Exception ex)
+        {
+            App.WriteCrashLog(ex);
+        }
+        finally
+        {
+            _maintenanceRunning = false;
+        }
     }
 
     private void RegisterConfiguredHotkeys()
@@ -648,8 +663,8 @@ public partial class MainWindow : Window
                     }
                 }
 
+                // The service tells the window agent to restore the windows once the apps are unlocked.
                 await ViewModel.SetListedAppsEnabledAsync(false);
-                _windowGuardService.RestoreHiddenProtectedWindows();
                 UpdateTrayMenu();
                 break;
         }
@@ -1118,9 +1133,8 @@ public partial class MainWindow : Window
 
         _servicesDisposed = true;
         _messageWindow.TrayMenuEnabled = false;
-        _windowGuardService.TickStarting -= OnWindowGuardTickStarting;
-        _windowGuardService.BeforeWindowScanAsync -= OnWindowGuardBeforeScanAsync;
-        _windowGuardService.Dispose();
+        _maintenanceTimer.Stop();
+        _maintenanceTimer.Tick -= OnMaintenanceTick;
 
         _messageWindow.ShowRequested -= OnMessageWindowShowRequested;
         _messageWindow.TrayDoubleClick -= OnMessageWindowTrayDoubleClick;

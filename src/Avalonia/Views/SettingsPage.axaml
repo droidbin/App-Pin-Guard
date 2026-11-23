@@ -102,6 +102,24 @@
                     </controls:SettingsCard>
                 </StackPanel>
 
+                <!-- 보호 상태 -->
+                <StackPanel Spacing="{StaticResource Space2}">
+                    <TextBlock Text="보호 상태"
+                               Classes="section-title" />
+
+                    <controls:SettingsCard Header="보호 서비스"
+                                           Description="{Binding ProtectionServiceText}" />
+
+                    <controls:SettingsCard Header="정책 적용"
+                                           Description="{Binding ProtectionRevisionText}" />
+
+                    <controls:SettingsCard Header="창 에이전트"
+                                           Description="{Binding ProtectionAgentText}" />
+
+                    <controls:SettingsCard Header="변조 감지"
+                                           Description="{Binding ProtectionTamperText}" />
+                </StackPanel>
+
                 <!-- 3. 단축키 -->
                 <StackPanel Spacing="{StaticResource Space2}">
                     <StackPanel Spacing="{StaticResource Space1}">

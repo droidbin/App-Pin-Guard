@@ -17,6 +17,8 @@ public class ProtectedAppViewModel : ObservableObject
     private string rawPath = string.Empty;
     private bool canConfigureLaunchPolicy;
     private bool isSelected;
+    private string appId = string.Empty;
+    private string rule = string.Empty;
 
     public string Name
     {
@@ -29,6 +31,27 @@ public class ProtectedAppViewModel : ObservableObject
             }
         }
     }
+
+    public string AppId
+    {
+        get => appId;
+        set => SetProperty(ref appId, value);
+    }
+
+    // Rule state reported by the service in status.json: applied-gate, applied-blocked, window-mode, conflict...
+    public string Rule
+    {
+        get => rule;
+        set
+        {
+            if (SetProperty(ref rule, value))
+            {
+                OnPropertyChanged(nameof(HasConflict));
+            }
+        }
+    }
+
+    public bool HasConflict => string.Equals(rule, "conflict", StringComparison.Ordinal);
 
     public string Identity
     {

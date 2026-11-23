@@ -36,15 +36,18 @@ if ($LASTEXITCODE -ne 0) {
 foreach ($required in @("hostfxr.dll", "coreclr.dll", "Avalonia.Base.dll", "libSkiaSharp.dll")) {
     if (!(Test-Path -LiteralPath (Join-Path $payloadSource $required))) { throw "Missing app-local runtime: $required" }
 }
-$serviceSource = Join-Path $root "src\Service\WindowsAppProtector.Service.cs"
+# Shared C# 5 sources (one schema/serializer for every component); each csc build gets only what it needs.
+function Get-SharedSources([string[]]$names) { $names | ForEach-Object { Join-Path $root ("src\Shared\" + $_ + ".cs") } }
 $productBrandSource = Join-Path $root "src\Shared\ProductBrand.cs"
-$launchServerSource = Join-Path $root "src\Service\LaunchAuthorizationServer.cs"
-$agentSupervisorSource = Join-Path $root "src\Service\SessionAgentSupervisor.cs"
+$serviceSources = @(Get-ChildItem -LiteralPath (Join-Path $root "src\Service") -Filter *.cs | ForEach-Object { $_.FullName }) +
+    (Get-SharedSources @("ProductBrand", "WapPaths", "WapLog", "PolicyModel", "PolicyStore", "PolicyRules", "PinHash", "GateSpool", "StatusModel", "EnforcementFile", "LegacyMigration", "WapSecurity"))
+$gateShared = Get-SharedSources @("ProductBrand", "WapPaths", "WapLog", "GateSpool", "WapSecurity")
+$agentShared = Get-SharedSources @("WapPaths", "WapLog", "WapSecurity", "EnforcementFile")
+$setupShared = Get-SharedSources @("ProductBrand", "WapPaths")
 $agentSource = Join-Path $root "src\WindowAgent\Program.cs"
 $gateSource = Join-Path $root "src\LaunchGate\Program.cs"
 $gateThemeSource = Join-Path $root "src\LaunchGate\GateTheme.cs"
 $gateFormSource = Join-Path $root "src\LaunchGate\GateForm.cs"
-$gateProtocol = Join-Path $root "src\LaunchGate\GateProtocol.cs"
 $gateManifest = Join-Path $root "src\LaunchGate\app.manifest"
 $gateFontDir = Join-Path $root "src\Avalonia\Assets\Fonts"
 $serviceBuildDir = Join-Path $root "build\service"
@@ -75,7 +78,7 @@ if (!(Test-Path $csc)) {
     throw "csc.exe not found: $csc"
 }
 
-& $csc /nologo /target:exe /optimize+ /reference:System.ServiceProcess.dll /reference:System.Runtime.Serialization.dll /out:$serviceExe $serviceSource $launchServerSource $agentSupervisorSource $gateProtocol $productBrandSource
+& $csc /nologo /codepage:65001 /target:exe /optimize+ /warnaserror+ /reference:System.ServiceProcess.dll /reference:System.Runtime.Serialization.dll /reference:System.Management.dll /out:$serviceExe $serviceSources
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
@@ -83,7 +86,7 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item -Path (Join-Path $payloadSource "*") -Destination $payloadDir -Recurse -Force
 Copy-Item -LiteralPath $serviceExe -Destination $payloadDir -Force
 $gateExe = Join-Path $payloadDir "WindowsAppProtector.Gate.exe"
-& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:$gateExe $gateSource $gateThemeSource $gateFormSource $gateProtocol $productBrandSource
+& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /warnaserror+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Runtime.Serialization.dll /out:$gateExe $gateSource $gateThemeSource $gateFormSource $gateShared
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
@@ -95,7 +98,7 @@ foreach ($fontName in @("Pretendard-Regular.otf", "Pretendard-SemiBold.otf")) {
     Copy-Item -LiteralPath $fontSource -Destination (Join-Path $payloadDir $fontName) -Force
 }
 $agentExe = Join-Path $payloadDir "WindowsAppProtector.WindowAgent.exe"
-& $csc /nologo /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /out:$agentExe $agentSource $gateProtocol
+& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /warnaserror+ /win32manifest:$gateManifest /win32icon:$icon /reference:System.Runtime.Serialization.dll /out:$agentExe $agentSource $agentShared
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
@@ -103,7 +106,7 @@ $payloadAssetsDir = Join-Path $payloadDir "Assets"
 New-Item -ItemType Directory -Path $payloadAssetsDir -Force | Out-Null
 Copy-Item -LiteralPath $icon -Destination (Join-Path $payloadAssetsDir "AppIcon.ico") -Force
 
-& $csc /nologo /target:winexe /optimize+ /win32manifest:$manifest /win32icon:$icon /reference:System.IO.Compression.FileSystem.dll /out:$setupExe $setupSource $productBrandSource
+& $csc /nologo /codepage:65001 /target:winexe /optimize+ /warnaserror+ /win32manifest:$manifest /win32icon:$icon /reference:System.IO.Compression.FileSystem.dll /out:$setupExe $setupSource $setupShared
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }

@@ -1,12 +1,23 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
-using System.IO.Pipes;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 using System.Text;
 using System.Windows.Forms;
+
+internal static class GateLog
+{
+    internal static string Path
+    {
+        get { return System.IO.Path.Combine(WapPaths.UserLogsDir, "gate.log"); }
+    }
+
+    internal static void Info(string key, params string[] fields) { WapLog.Info("gate", Path, key, fields); }
+    internal static void Warn(string key, params string[] fields) { WapLog.Warn("gate", Path, key, fields); }
+    internal static void Exception(string key, Exception ex) { WapLog.Exception("gate", Path, key, ex); }
+}
 
 internal static class Gate
 {
@@ -16,7 +27,16 @@ internal static class Gate
         if (args.Length >= 1 && args[0] == "--blocked")
         {
             // IFEO fallback rule: this exe runs without elevation, so the block message always shows.
+            GateLog.Info("gate.blocked");
             ShowError("보호 정책에 따라 이 앱의 실행이 차단되었습니다.");
+            return 1;
+        }
+
+        if (args.Length >= 1 && args[0] == "--notice-blocked")
+        {
+            // Shown by the service after the process watcher ended a launch that bypassed the gate.
+            GateLog.Info("gate.notice", "app=" + (args.Length > 1 ? System.IO.Path.GetFileName(args[1]) : string.Empty));
+            ShowError("PIN Guard가 잠긴 앱의 실행을 막았습니다.");
             return 1;
         }
 
@@ -26,51 +46,67 @@ internal static class Gate
             if (!Path.IsPathRooted(args[1])) throw new InvalidDataException("보호 앱의 전체 경로가 필요합니다.");
             string path = Path.GetFullPath(args[1]);
             if (!File.Exists(path)) throw new FileNotFoundException("보호 앱을 찾을 수 없습니다.");
-            byte result = Authorize(path, string.Empty);
-            if (result == GateProtocol.PromptRequired)
+            GateLog.Info("gate.launch.requested", "app=" + System.IO.Path.GetFileName(path));
+            GateResponse response = Authorize(path, string.Empty);
+            if (response.Result == GateSpool.ResultPrompt)
             {
                 string pin = Prompt(path);
                 if (string.IsNullOrWhiteSpace(pin)) return 1;
-                result = Authorize(path, pin);
+                response = Authorize(path, pin);
             }
-            if (result != GateProtocol.Approved)
+            if (response.Result != GateSpool.ResultApproved)
             {
-                ShowError(result == GateProtocol.RateLimited
-                    ? "PIN 입력 제한이 활성화되어 있습니다. 잠시 후 다시 시도하세요."
-                    : "PIN이 일치하지 않거나 현재 실행할 수 없는 앱입니다.");
+                GateLog.Info("gate.launch.refused", "result=" + response.Result);
+                ShowError(DescribeRefusal(response));
                 return 1;
             }
 
             var child = Launch(path, args.Skip(2).ToArray());
             EnsureCursorVisible();
-            try { Exchange(GateProtocol.Track, path, child.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
-            catch (IOException) { }
-            catch (TimeoutException) { }
+            GateLog.Info("gate.launch.started", "pid=" + child);
+            Track(path, (int)child);
             return 0;
         }
         catch (Exception ex)
         {
+            GateLog.Exception("gate.launch.failed", ex);
             ShowError("보호 앱을 실행할 수 없습니다.\n" + ex.Message);
             return 1;
         }
     }
 
-    private static byte Authorize(string path, string pin)
+    private static string DescribeRefusal(GateResponse response)
     {
-        return Exchange(GateProtocol.Authorize, path, pin);
+        switch (response.Result)
+        {
+            case GateSpool.ResultRateLimited:
+                return "PIN 입력 제한이 활성화되어 있습니다. " +
+                    (response.RetryAfterSeconds > 0 ? response.RetryAfterSeconds + "초 후에 다시 시도하세요." : "잠시 후 다시 시도하세요.");
+            case GateSpool.ResultUnavailable:
+                // Fail closed: without an answer the app is not started.
+                return "보호 서비스가 응답하지 않아 실행할 수 없습니다.";
+            default:
+                return "PIN이 일치하지 않거나 현재 실행할 수 없는 앱입니다.";
+        }
     }
 
-    private static byte Exchange(byte command, string path, string value)
+    private static GateResponse Authorize(string path, string pin)
     {
-        using (var pipe = GateProtocol.ConnectToService())
+        return Exchange(new GateRequest { Op = GateSpool.OpAuthorize, Pid = Process.GetCurrentProcess().Id, Path = path, Pin = pin });
+    }
+
+    private static void Track(string path, int child)
+    {
+        try
         {
-            pipe.WriteByte(GateProtocol.Version);
-            pipe.WriteByte(command);
-            GateProtocol.WriteText(pipe, path, 4096);
-            GateProtocol.WriteText(pipe, value, 128);
-            pipe.Flush();
-            return GateProtocol.Read(pipe, 1, DateTime.UtcNow.AddSeconds(5))[0];
+            Exchange(new GateRequest { Op = GateSpool.OpTrack, Pid = Process.GetCurrentProcess().Id, Path = path, Child = child });
         }
+        catch (IOException) { }
+    }
+
+    private static GateResponse Exchange(GateRequest request)
+    {
+        return GateSpool.Exchange(request);
     }
 
     private static string Prompt(string appPath)

@@ -118,6 +118,8 @@ public sealed class AppDetailViewModel : ObservableObject
         }
     }
 
+    public bool HasRuleConflict => _currentApp?.HasConflict == true;
+
     public bool ShowUnsupportedPolicyNote => !_supportsLaunchPolicy && _currentApp is not null;
 
     public bool HasExistingCustomPin
@@ -571,6 +573,7 @@ public sealed class AppDetailViewModel : ObservableObject
         AppIcon = app.Icon;
         IsLocked = app.IsLocked;
         OnPropertyChanged(nameof(CurrentApp));
+        OnPropertyChanged(nameof(HasRuleConflict));
     }
 
     private void DetachApp()
@@ -603,6 +606,9 @@ public sealed class AppDetailViewModel : ObservableObject
                 break;
             case nameof(ProtectedAppViewModel.IsLocked):
                 IsLocked = _currentApp.IsLocked;
+                break;
+            case nameof(ProtectedAppViewModel.Rule):
+                OnPropertyChanged(nameof(HasRuleConflict));
                 break;
         }
     }

@@ -19,7 +19,13 @@
 
   <ItemGroup>
     <Compile Include="../../src/Shared/ProductBrand.cs" Link="ProductBrand.cs" />
-    <Compile Include="../../src/Avalonia/Services/PinHasher.cs" Link="PinHasher.cs" />
+    <Compile Include="../../src/Shared/PinHash.cs" Link="PinHash.cs" />
+    <Compile Include="../../src/Shared/PolicyModel.cs" Link="PolicyModel.cs" />
+    <Compile Include="../../src/Shared/PolicyRules.cs" Link="PolicyRules.cs" />
+    <Compile Include="../../src/Shared/GateSpool.cs" Link="GateSpool.cs" />
+    <Compile Include="../../src/Shared/EnforcementFile.cs" Link="EnforcementFile.cs" />
+    <Compile Include="../../src/Shared/WapPaths.cs" Link="WapPaths.cs" />
+    <Compile Include="../../src/Shared/WapSecurity.cs" Link="WapSecurity.cs" />
     <Compile Include="../../src/Avalonia/Services/GitHubUpdateService.cs" Link="GitHubUpdateService.cs" />
     <Compile Include="../../src/Avalonia/Services/StartupService.cs" Link="StartupService.cs" />
   </ItemGroup>

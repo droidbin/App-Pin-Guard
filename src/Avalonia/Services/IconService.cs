@@ -81,7 +81,7 @@ public sealed class IconService : IDisposable
         return GetIcon(app.Path);
     }
 
-    public Bitmap? GetAppIcon(ProtectedApp app, string? installLocation = null)
+    internal Bitmap? GetAppIcon(AppPolicy app, string? installLocation = null)
     {
         if (app.IsPackaged)
         {
