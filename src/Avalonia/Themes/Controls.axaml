@@ -617,4 +617,18 @@
     <Style Selector="Border.SettingsCardMessage.error TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
     </Style>
+
+    <!-- 주요(검은) 버튼 비활성: Fluent 기본 비활성 글자색이 어두운 배경에서 안 보이는 문제 방지 -->
+    <Style Selector="Button.Primary:disabled /template/ ContentPresenter#PART_ContentPresenter, Button.accent:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlNeutralBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+    </Style>
+    <Style Selector="SplitButton.Primary:disabled /template/ Button ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+    </Style>
+    <Style Selector="Button.Primary TextBlock, Button.accent TextBlock">
+        <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
+    </Style>
 </Styles>
