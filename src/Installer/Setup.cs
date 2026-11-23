@@ -614,7 +614,11 @@ internal static class Setup
                     return;
                 }
 
-                key.SetValue("DisplayName", ProductBrand.Name);
+                // Apps list: tag prerelease builds, e.g. "App PIN Guard (Beta 7)". AppName stays the install/data folder id.
+                int betaMarker = AppVersion.IndexOf("-beta.", StringComparison.OrdinalIgnoreCase);
+                key.SetValue("DisplayName", betaMarker < 0
+                    ? ProductBrand.Name
+                    : ProductBrand.Name + " (Beta " + AppVersion.Substring(betaMarker + 6) + ")");
                 key.SetValue("DisplayVersion", AppVersion);
                 key.SetValue("Publisher", ProductBrand.Name);
                 key.SetValue("InstallLocation", installDir);
