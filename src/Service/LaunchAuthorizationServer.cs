@@ -100,18 +100,22 @@ internal sealed class LaunchAuthorizationServer : IDisposable
     private void Handle(NamedPipeServerStream pipe)
     {
         byte reply = GateProtocol.Denied;
+        byte lastCommand = 0;
         try
         {
             var deadline = DateTime.UtcNow.AddSeconds(2);
-            int processId;
-            int sessionId;
+            int processId = 0;
+            int sessionId = 0;
             var header = GateProtocol.Read(pipe, 2, deadline);
             var command = header[1];
+            lastCommand = command;
             var expectedPath = command == GateProtocol.ReadWindowPolicy
                 ? agentPath
                 : command == GateProtocol.SyncPolicy ? uiPath : gatePath;
-            if (header[0] == GateProtocol.Version &&
-                IsExpectedProcess(pipe, expectedPath, out processId, out sessionId))
+            bool expectedCaller = header[0] == GateProtocol.Version &&
+                IsExpectedProcess(pipe, expectedPath, out processId, out sessionId);
+            if (!expectedCaller && command == GateProtocol.SyncPolicy) reply = GateProtocol.SyncCallerRejected;
+            if (expectedCaller)
             {
                 if (command == GateProtocol.ReadWindowPolicy)
                 {
@@ -138,7 +142,7 @@ internal sealed class LaunchAuthorizationServer : IDisposable
                 }
                 else if (command == GateProtocol.SyncPolicy)
                 {
-                    if (IsAdministratorAndInteractive(pipe)) reply = syncPolicy();
+                    reply = IsAdministratorAndInteractive(pipe) ? syncPolicy() : GateProtocol.SyncNotAdministrator;
                 }
                 else if (command == GateProtocol.Authorize || command == GateProtocol.Track)
                 {
@@ -162,8 +166,25 @@ internal sealed class LaunchAuthorizationServer : IDisposable
             // Treat invalid requests and unavailable policy as denied.
         }
 
+        if (lastCommand == GateProtocol.SyncPolicy && reply != GateProtocol.Approved) LogSyncRejection(reply);
         pipe.WriteByte(reply);
         pipe.Flush();
+    }
+
+    private static void LogSyncRejection(byte reply)
+    {
+        try
+        {
+            string directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "Windows App Protector", "Logs");
+            Directory.CreateDirectory(directory);
+            File.AppendAllText(Path.Combine(directory, "service.log"),
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " SyncPolicy rejected, reply=" + reply + "\r\n");
+        }
+        catch (Exception)
+        {
+        }
     }
 
     private static bool IsAdministratorAndInteractive(NamedPipeServerStream pipe)

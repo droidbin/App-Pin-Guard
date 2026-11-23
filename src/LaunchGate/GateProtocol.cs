@@ -17,6 +17,8 @@ internal static class GateProtocol
     internal const byte Approved = 1;
     internal const byte RateLimited = 2;
     internal const byte PromptRequired = 3;
+    internal const byte SyncCallerRejected = 4;
+    internal const byte SyncNotAdministrator = 5;
     private static readonly Encoding Utf8 = new UTF8Encoding(false, true);
 
     internal static NamedPipeClientStream ConnectToService()

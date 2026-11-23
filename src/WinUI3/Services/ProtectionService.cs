@@ -35,7 +35,12 @@ public sealed class ProtectionService : IProtectionService
                 var reply = GateProtocol.Read(pipe, 1, DateTime.UtcNow.AddSeconds(3))[0];
                 if (reply != GateProtocol.Approved)
                 {
-                    throw new InvalidOperationException("보호 서비스가 정책 다시 적용 요청을 거부했습니다.");
+                    throw new InvalidOperationException(reply switch
+                    {
+                        GateProtocol.SyncCallerRejected => "보호 서비스가 요청한 앱을 설치된 실행 파일로 확인하지 못했습니다.",
+                        GateProtocol.SyncNotAdministrator => "보호 서비스가 관리자 권한 세션으로 확인하지 못했습니다.",
+                        _ => "보호 서비스가 설정 파일을 읽지 못해 요청을 거부했습니다.",
+                    });
                 }
             }
             catch (TimeoutException ex)

@@ -643,8 +643,10 @@ public class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = $"보호 정책은 저장했지만 서비스에 적용하지 못했습니다: {ex.Message}";
-            return false;
+            // The service re-reads the saved policy every few seconds on its own, so a failed immediate
+            // request only delays the change; report the reason without treating the save as failed.
+            StatusText = $"보호 정책을 저장했습니다. 즉시 적용 요청은 실패했지만 서비스가 실행 중이면 몇 초 안에 자동 반영됩니다. ({ex.Message})";
+            return true;
         }
     }
 

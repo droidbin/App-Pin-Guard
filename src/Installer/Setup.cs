@@ -92,27 +92,21 @@ internal static class Setup
             CopyPayloadDirectory(payloadDir, installDir);
 
             string targetPath = Path.Combine(installDir, ExeName);
-            bool createShortcuts = AskCreateShortcuts();
-            if (createShortcuts)
+            // The Start Menu entry is what makes the app searchable after it is closed, so it is always created;
+            // only the desktop shortcut is optional.
+            string startMenuPrograms = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs");
+            CreateShortcut(Path.Combine(startMenuPrograms, ProductBrand.Name + ".lnk"), targetPath, installDir);
+            if (AskCreateShortcuts())
             {
                 CreateShortcut(
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), ProductBrand.Name + ".lnk"),
                     targetPath,
                     installDir);
-                CreateShortcut(
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs", ProductBrand.Name + ".lnk"),
-                    targetPath,
-                    installDir);
             }
 
             WriteUninstaller(installDir);
-            if (createShortcuts)
-            {
-                CreateShortcut(
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu), "Programs", ProductBrand.Name + " Uninstall.lnk"),
-                    Path.Combine(installDir, "Uninstall.bat"),
-                    installDir);
-            }
+            CreateShortcut(Path.Combine(startMenuPrograms, ProductBrand.Name + " Uninstall.lnk"),
+                Path.Combine(installDir, "Uninstall.bat"), installDir);
 
             TryWriteUninstallRegistry(installDir);
             InstallAndStartService(Path.Combine(installDir, ServiceExeName));
@@ -536,7 +530,7 @@ internal static class Setup
     {
         int result = MessageBoxW(
             IntPtr.Zero,
-            "\uBC14\uD0D5\uD654\uBA74 \uBC0F \uC2DC\uC791 \uBA54\uB274 \uBC14\uB85C\uAC00\uAE30\uB97C \uC0DD\uC131\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?",
+            "\uBC14\uD0D5\uD654\uBA74 \uBC14\uB85C\uAC00\uAE30\uB97C \uC0DD\uC131\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?",
             ProductBrand.Name,
             MessageBoxQuestionYesNo);
 
