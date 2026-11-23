@@ -248,13 +248,14 @@ public partial class AppsPage : UserControl
 
         var iconService = _iconService;
         var cts = new CancellationTokenSource();
+        var iconToken = cts.Token;
         _iconLoadCts = cts;
 
         _ = Task.Run(() =>
         {
             foreach (var item in itemsToLoad)
             {
-                if (cts.Token.IsCancellationRequested)
+                if (iconToken.IsCancellationRequested)
                 {
                     return;
                 }
@@ -265,7 +266,7 @@ public partial class AppsPage : UserControl
                     Dispatcher.UIThread.Post(() => item.Icon = bitmap, DispatcherPriority.Background);
                 }
             }
-        }, cts.Token);
+        }, iconToken);
     }
 
     private void CancelIconLoading()

@@ -56,6 +56,11 @@ public sealed class ProtectionService : IProtectionService
                     });
                 }
             }
+            catch (Exception ex) when (ex is not TimeoutException && ex is not IOException && ex is not InvalidOperationException)
+            {
+                App.WriteProtectionLog("policy-resync-failed " + ex.GetType().Name + " hresult=0x" + ex.HResult.ToString("X8") + " " + ex.Message);
+                throw;
+            }
             catch (TimeoutException ex)
             {
                 throw new InvalidOperationException(
