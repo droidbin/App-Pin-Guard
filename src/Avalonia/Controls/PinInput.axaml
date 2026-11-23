@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WindowsAppProtector.Controls.PinInput"
+             Focusable="False">
+    <StackPanel Spacing="{StaticResource Space2}"
+                HorizontalAlignment="Center">
+        <Grid x:Name="SlotsHost"
+              HorizontalAlignment="Center"
+              PointerPressed="OnSlotsHostPointerPressed">
+            <StackPanel x:Name="SlotsPanel"
+                        Orientation="Horizontal"
+                        Spacing="{StaticResource Space2}"
+                        HorizontalAlignment="Center">
+                <Border x:Name="Slot0" Classes="PinSlot">
+                    <TextBlock x:Name="Glyph0" Classes="PinSlotGlyph" />
+                </Border>
+                <Border x:Name="Slot1" Classes="PinSlot">
+                    <TextBlock x:Name="Glyph1" Classes="PinSlotGlyph" />
+                </Border>
+                <Border x:Name="Slot2" Classes="PinSlot">
+                    <TextBlock x:Name="Glyph2" Classes="PinSlotGlyph" />
+                </Border>
+                <Border x:Name="Slot3" Classes="PinSlot">
+                    <TextBlock x:Name="Glyph3" Classes="PinSlotGlyph" />
+                </Border>
+                <Border x:Name="Slot4" Classes="PinSlot">
+                    <TextBlock x:Name="Glyph4" Classes="PinSlotGlyph" />
+                </Border>
+                <Border x:Name="Slot5" Classes="PinSlot">
+                    <TextBlock x:Name="Glyph5" Classes="PinSlotGlyph" />
+                </Border>
+            </StackPanel>
+
+            <TextBox x:Name="PinTextBox"
+                     PasswordChar="•"
+                     MaxLength="6"
+                     Opacity="0"
+                     MinHeight="0"
+                     MinWidth="0"
+                     Padding="0"
+                     BorderThickness="0"
+                     Background="{DynamicResource TransparentBrush}"
+                     CaretBrush="{DynamicResource TransparentBrush}"
+                     SelectionBrush="{DynamicResource TransparentBrush}"
+                     HorizontalAlignment="Stretch"
+                     VerticalAlignment="Stretch"
+                     AutomationProperties.Name="PIN 입력" />
+        </Grid>
+
+        <TextBlock x:Name="ErrorTextBlock"
+                   Classes="caption"
+                   Foreground="{DynamicResource DangerBrush}"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"
+                   MaxWidth="320"
+                   IsVisible="False" />
+    </StackPanel>
+</UserControl>

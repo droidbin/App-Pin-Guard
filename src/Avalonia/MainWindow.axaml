@@ -1,0 +1,219 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:WindowsAppProtector.Views"
+        x:Class="WindowsAppProtector.MainWindow"
+        Title="App PIN Guard"
+        Width="980"
+        Height="680"
+        MinWidth="640"
+        MinHeight="480"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="40"
+        FontFamily="{StaticResource AppFontFamily}">
+
+    <Grid RowDefinitions="40,*">
+        <!-- 7.1 커스텀 제목표시줄 -->
+        <Grid x:Name="TitleBarGrid"
+              Grid.Row="0"
+              ColumnDefinitions="Auto,*,Auto"
+              Background="{DynamicResource TransparentBrush}">
+            <StackPanel Grid.Column="0"
+                        Orientation="Horizontal"
+                        Spacing="{StaticResource Space2}"
+                        Margin="14,0,0,0"
+                        VerticalAlignment="Center"
+                        IsHitTestVisible="False">
+                <Image Source="avares://WindowsAppProtector.WinUI/Assets/AppIcon.png"
+                       Width="18"
+                       Height="18"
+                       VerticalAlignment="Center" />
+                <TextBlock Text="App PIN Guard"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource InkBrush}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <!-- 제목표시줄 드래그 영역 -->
+            <Border Grid.Column="1"
+                    Background="{DynamicResource TransparentBrush}"
+                    PointerPressed="OnTitleBarPointerPressed"
+                    DoubleTapped="OnTitleBarDoubleTapped" />
+
+            <!-- 캡션 버튼 왼쪽 '지금 잠그기' 버튼 -->
+            <Button x:Name="LockNowButton"
+                    Grid.Column="2"
+                    Classes="TitleBarAction"
+                    Margin="0,0,144,0"
+                    VerticalAlignment="Center"
+                    IsVisible="False"
+                    Click="OnLockNowClick"
+                    AutomationProperties.Name="지금 잠그기">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6"
+                            VerticalAlignment="Center">
+                    <Path Data="M 4,6 V 4 A 3,3 0 0 1 10,4 V 6 M 3,6 H 11 A 1,1 0 0 1 12,7 V 12 A 1,1 0 0 1 11,13 H 3 A 1,1 0 0 1 2,12 V 7 A 1,1 0 0 1 3,6 Z"
+                          Width="14"
+                          Height="14"
+                          Stroke="{DynamicResource InkBrush}"
+                          StrokeThickness="1.3"
+                          StrokeLineCap="Round"
+                          StrokeJoin="Round"
+                          VerticalAlignment="Center" />
+                    <TextBlock Text="지금 잠그기"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- 본문 영역: 관리 셸 / 잠금 화면 / 첫 실행 마법사 -->
+        <Grid Grid.Row="1">
+            <!-- 관리 화면 셸 -->
+            <Grid x:Name="MainShellGrid"
+                  ColumnDefinitions="Auto,*,Auto"
+                  IsVisible="False">
+                <!-- 왼쪽 내비게이션 레일 (창폭 900 미만이면 접힘) -->
+                <Border x:Name="NavRailBorder"
+                        Grid.Column="0"
+                        Width="200"
+                        BorderThickness="0,1,1,0"
+                        BorderBrush="{DynamicResource DividerBrush}"
+                        Background="{DynamicResource CanvasBrush}"
+                        Padding="8,12">
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <StackPanel Grid.Row="0"
+                                    Spacing="{StaticResource Space1}">
+                            <Button x:Name="NavAppsButton"
+                                    Classes="NavRailItem selected"
+                                    Click="OnNavAppsClick"
+                                    ToolTip.Tip="보호 앱"
+                                    AutomationProperties.Name="보호 앱">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="{StaticResource Space3}"
+                                            VerticalAlignment="Center">
+                                    <Path Data="M 8,1.5 L 14,4 V 8.5 C 14,12 11.4,14.4 8,15.5 C 4.6,14.4 2,12 2,8.5 V 4 Z"
+                                          Width="16"
+                                          Height="16"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          StrokeThickness="1.5"
+                                          StrokeJoin="Round"
+                                          VerticalAlignment="Center" />
+                                    <TextBlock x:Name="NavAppsLabel"
+                                               Text="보호 앱"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="NavSettingsButton"
+                                    Classes="NavRailItem"
+                                    Click="OnNavSettingsClick"
+                                    ToolTip.Tip="설정"
+                                    AutomationProperties.Name="설정">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="{StaticResource Space3}"
+                                            VerticalAlignment="Center">
+                                    <Path Data="M 8,5.2 A 2.8,2.8 0 1 0 8,10.8 A 2.8,2.8 0 1 0 8,5.2 Z M 8,1.5 V 3 M 8,13 V 14.5 M 1.5,8 H 3 M 13,8 H 14.5 M 3.4,3.4 L 4.5,4.5 M 11.5,11.5 L 12.6,12.6 M 12.6,3.4 L 11.5,4.5 M 4.5,11.5 L 3.4,12.6"
+                                          Width="16"
+                                          Height="16"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          StrokeThickness="1.5"
+                                          StrokeLineCap="Round"
+                                          VerticalAlignment="Center" />
+                                    <TextBlock x:Name="NavSettingsLabel"
+                                               Text="설정"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 오른쪽 페이지 및 InfoBar 영역 -->
+                <Border Grid.Column="1"
+                        BorderThickness="0,1,0,0"
+                        BorderBrush="{DynamicResource DividerBrush}">
+                    <Grid RowDefinitions="Auto,*">
+                        <!-- INotificationService 표시용 InfoBar 영역 -->
+                        <Border x:Name="NotificationInfoBar"
+                                Grid.Row="0"
+                                Classes="InfoBar"
+                                Margin="32,16,32,0"
+                                IsVisible="False"
+                                AutomationProperties.Name="알림">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+                                  ColumnSpacing="12">
+                                <Path x:Name="InfoBarIcon"
+                                      Grid.Column="0"
+                                      Width="16"
+                                      Height="16"
+                                      Stroke="{DynamicResource InkBrush}"
+                                      StrokeThickness="1.6"
+                                      StrokeLineCap="Round"
+                                      StrokeJoin="Round"
+                                      VerticalAlignment="Center"
+                                      Data="M 8,2 A 6,6 0 1 0 8,14 A 6,6 0 1 0 8,2 Z M 8,7 V 11 M 8,5 V 5.2" />
+
+                                <StackPanel Grid.Column="1"
+                                            Spacing="2"
+                                            VerticalAlignment="Center">
+                                    <TextBlock x:Name="InfoBarTitle"
+                                               Classes="caption"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource InkBrush}"
+                                               IsVisible="False" />
+                                    <TextBlock x:Name="InfoBarMessage"
+                                               Classes="body"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <Button x:Name="InfoBarActionButton"
+                                        Grid.Column="2"
+                                        Padding="10,5"
+                                        VerticalAlignment="Center"
+                                        IsVisible="False"
+                                        Click="OnInfoBarActionClick" />
+
+                                <Button x:Name="InfoBarCloseButton"
+                                        Grid.Column="3"
+                                        Classes="LinkButton"
+                                        Content="✕"
+                                        Padding="6,4"
+                                        VerticalAlignment="Center"
+                                        Click="OnDismissNotificationClick"
+                                        AutomationProperties.Name="알림 닫기" />
+                            </Grid>
+                        </Border>
+
+                        <!-- 콘텐츠 영역 (보호 앱 / 설정) -->
+                        <Grid x:Name="ContentHostGrid"
+                              Grid.Row="1"
+                              Margin="32,24">
+                            <!-- 7.2 보호 앱 화면 -->
+                            <views:AppsPage x:Name="AppsPageView"
+                                            IsVisible="True" />
+
+                            <!-- 7.7 설정 화면 -->
+                            <views:SettingsPage x:Name="SettingsPageView"
+                                                IsVisible="False" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- 7.3 앱 상세 패널 (창폭 >= 900: 오른쪽 360px 패널, < 900: 전체 화면 오버레이) -->
+                <views:AppDetailPane x:Name="AppDetailPaneView"
+                                     Grid.Column="2"
+                                     Width="360"
+                                     IsVisible="False" />
+            </Grid>
+
+            <!-- 7.4 잠금 화면 -->
+            <views:LockPage x:Name="LockPageView"
+                            IsVisible="True" />
+
+            <!-- 7.6 첫 실행 마법사 (PIN이 없을 때만) -->
+            <views:OnboardingPage x:Name="OnboardingPageView"
+                                  IsVisible="False" />
+        </Grid>
+    </Grid>
+</Window>

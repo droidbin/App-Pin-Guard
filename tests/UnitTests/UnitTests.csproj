@@ -19,8 +19,8 @@
 
   <ItemGroup>
     <Compile Include="../../src/Shared/ProductBrand.cs" Link="ProductBrand.cs" />
-    <Compile Include="../../src/WinUI3/Services/PinHasher.cs" Link="PinHasher.cs" />
-    <Compile Include="../../src/WinUI3/Services/GitHubUpdateService.cs" Link="GitHubUpdateService.cs" />
-    <Compile Include="../../src/WinUI3/Services/StartupService.cs" Link="StartupService.cs" />
+    <Compile Include="../../src/Avalonia/Services/PinHasher.cs" Link="PinHasher.cs" />
+    <Compile Include="../../src/Avalonia/Services/GitHubUpdateService.cs" Link="GitHubUpdateService.cs" />
+    <Compile Include="../../src/Avalonia/Services/StartupService.cs" Link="StartupService.cs" />
   </ItemGroup>
 </Project>

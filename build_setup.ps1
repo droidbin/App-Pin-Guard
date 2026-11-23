@@ -5,7 +5,7 @@ Set-Location $root
 $appVersion = (Get-Content -LiteralPath (Join-Path $root "VERSION") -Raw).Trim()
 
 $candidateRoots = @(
-    (Join-Path $root "src\WinUI3\bin"),
+    (Join-Path $root "src\Avalonia\bin"),
     (Join-Path $root "build")
 )
 
@@ -22,18 +22,18 @@ Get-Process WindowsAppProtector.WinUI -ErrorAction SilentlyContinue | Where-Obje
 } | Stop-Process -Force -ErrorAction SilentlyContinue
 
 $payloadSource = Join-Path $root "build\publish-win-x64"
-# Publish, rather than build output, includes both .NET and Windows App SDK runtimes.
+# Publish, rather than build output, includes the self-contained .NET and Avalonia runtimes.
 if (Test-Path -LiteralPath $payloadSource) {
     $resolved = (Resolve-Path -LiteralPath $payloadSource).Path
     if ($resolved -ne (Join-Path $root "build\publish-win-x64")) { throw "Unexpected publish directory: $resolved" }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }
-& dotnet publish "$root\src\WinUI3\WindowsAppProtector.WinUI.csproj" -c Release -p:Platform=x64 -r win-x64 --self-contained true -o $payloadSource
+& dotnet publish "$root\src\Avalonia\WindowsAppProtector.App.csproj" -c Release -p:Platform=x64 -r win-x64 --self-contained true -o $payloadSource
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-foreach ($required in @("hostfxr.dll", "coreclr.dll", "Microsoft.UI.Xaml.dll")) {
+foreach ($required in @("hostfxr.dll", "coreclr.dll", "Avalonia.Base.dll", "libSkiaSharp.dll")) {
     if (!(Test-Path -LiteralPath (Join-Path $payloadSource $required))) { throw "Missing app-local runtime: $required" }
 }
 $serviceSource = Join-Path $root "src\Service\WindowsAppProtector.Service.cs"
@@ -42,8 +42,11 @@ $launchServerSource = Join-Path $root "src\Service\LaunchAuthorizationServer.cs"
 $agentSupervisorSource = Join-Path $root "src\Service\SessionAgentSupervisor.cs"
 $agentSource = Join-Path $root "src\WindowAgent\Program.cs"
 $gateSource = Join-Path $root "src\LaunchGate\Program.cs"
+$gateThemeSource = Join-Path $root "src\LaunchGate\GateTheme.cs"
+$gateFormSource = Join-Path $root "src\LaunchGate\GateForm.cs"
 $gateProtocol = Join-Path $root "src\LaunchGate\GateProtocol.cs"
 $gateManifest = Join-Path $root "src\LaunchGate\app.manifest"
+$gateFont = Join-Path $root "src\Avalonia\Assets\Fonts\PretendardVariable.ttf"
 $serviceBuildDir = Join-Path $root "build\service"
 $serviceExe = Join-Path $serviceBuildDir "WindowsAppProtector.Service.exe"
 $buildDir = Join-Path $root "build\installer"
@@ -51,7 +54,7 @@ $payloadDir = Join-Path $buildDir "payload"
 $distDir = Join-Path $root "dist\installer"
 $setupSource = Join-Path $root "src\Installer\Setup.cs"
 $manifest = Join-Path $root "src\Installer\app.manifest"
-$icon = Join-Path $root "src\WinUI3\Assets\AppIcon.ico"
+$icon = Join-Path $root "src\Avalonia\Assets\AppIcon.ico"
 $setupExe = Join-Path $distDir "Setup.exe"
 $versionedDistDir = Join-Path $root ("dist\releases\" + $appVersion)
 $zipPath = Join-Path $buildDir "payload.zip"
@@ -80,10 +83,14 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item -Path (Join-Path $payloadSource "*") -Destination $payloadDir -Recurse -Force
 Copy-Item -LiteralPath $serviceExe -Destination $payloadDir -Force
 $gateExe = Join-Path $payloadDir "WindowsAppProtector.Gate.exe"
-& $csc /nologo /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:$gateExe $gateSource $gateProtocol $productBrandSource
+& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:$gateExe $gateSource $gateThemeSource $gateFormSource $gateProtocol $productBrandSource
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
+if (!(Test-Path -LiteralPath $gateFont)) {
+    throw "Gate font not found: $gateFont"
+}
+Copy-Item -LiteralPath $gateFont -Destination (Join-Path $payloadDir "PretendardVariable.ttf") -Force
 $agentExe = Join-Path $payloadDir "WindowsAppProtector.WindowAgent.exe"
 & $csc /nologo /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /out:$agentExe $agentSource $gateProtocol
 if ($LASTEXITCODE -ne 0) {

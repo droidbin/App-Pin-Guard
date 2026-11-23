@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WindowsAppProtector.Controls.SettingsCard">
+    <Border Classes="SurfaceCard"
+            Padding="16,14">
+        <StackPanel Spacing="0">
+            <Grid ColumnDefinitions="*,Auto"
+                  ColumnSpacing="16">
+                <!-- 왼쪽: 제목(+선택적 태그) 및 한 문장 설명 -->
+                <StackPanel Grid.Column="0"
+                            Spacing="4"
+                            VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                        <TextBlock x:Name="HeaderTextBlock"
+                                   Classes="app-name"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center" />
+
+                        <Border x:Name="TagChipBorder"
+                                Classes="StatusChip"
+                                IsVisible="False">
+                            <TextBlock x:Name="TagChipTextBlock" />
+                        </Border>
+                    </StackPanel>
+
+                    <TextBlock x:Name="DescriptionTextBlock"
+                               Classes="caption"
+                               TextWrapping="Wrap"
+                               IsVisible="False" />
+                </StackPanel>
+
+                <!-- 오른쪽: 컨트롤 슬롯 -->
+                <ContentPresenter x:Name="ActionContentPresenter"
+                                  Grid.Column="1"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Right" />
+            </Grid>
+
+            <!-- 카드 안 메시지 (적용 실패 오류 / 단축키 충돌 경고 / 업데이트 결과) -->
+            <Border x:Name="CardMessageBorder"
+                    Classes="SettingsCardMessage"
+                    Margin="0,10,0,0"
+                    IsVisible="False">
+                <TextBlock x:Name="CardMessageTextBlock"
+                           Classes="caption"
+                           TextWrapping="Wrap" />
+            </Border>
+
+            <!-- 선택적 하단 슬롯 -->
+            <ContentPresenter x:Name="FooterContentPresenter"
+                              IsVisible="False" />
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -1,0 +1,336 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WindowsAppProtector.ViewModels"
+             x:Class="WindowsAppProtector.Views.AppsPage">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
+        <!-- 1. 제목 및 상태 문장 / 서비스 경고 InfoBar -->
+        <StackPanel Grid.Row="0"
+                    Spacing="{StaticResource Space2}">
+            <TextBlock Text="보호 앱"
+                       Classes="page-title" />
+
+            <!-- 정상 상태 문장 -->
+            <TextBlock x:Name="StatusSentenceText"
+                       Text="잠긴 앱이 없습니다. 보호 서비스 정상 작동 중."
+                       Classes="body"
+                       Foreground="{DynamicResource InkMutedBrush}"
+                       TextWrapping="Wrap" />
+
+            <!-- 서비스 꺼짐 / 정책 동기화 실패 경고 InfoBar -->
+            <Border x:Name="ServiceWarningInfoBar"
+                    Classes="InfoBar warning"
+                    IsVisible="False"
+                    AutomationProperties.Name="보호 서비스 경고">
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="12">
+                    <Path Grid.Column="0"
+                          Width="16"
+                          Height="16"
+                          Stroke="{DynamicResource LatchBrush}"
+                          StrokeThickness="1.6"
+                          StrokeLineCap="Round"
+                          StrokeJoin="Round"
+                          VerticalAlignment="Center"
+                          Data="M 8,2 L 14.5,13.5 H 1.5 Z M 8,6.5 V 9.8 M 8,11.8 V 12" />
+
+                    <TextBlock x:Name="ServiceWarningText"
+                               Grid.Column="1"
+                               Classes="body"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+
+                    <Button x:Name="RestartServiceButton"
+                            Grid.Column="2"
+                            Content="서비스 다시 시작"
+                            Padding="10,5"
+                            VerticalAlignment="Center"
+                            Click="OnRestartServiceClick"
+                            AutomationProperties.Name="서비스 다시 시작" />
+                </Grid>
+            </Border>
+        </StackPanel>
+
+        <!-- 2. 툴바: 앱 추가 SplitButton / 검색 / 모두 잠그기 드롭다운 -->
+        <Grid Grid.Row="1"
+              ColumnDefinitions="Auto,*,Auto"
+              ColumnSpacing="12"
+              Margin="0,16,0,12">
+            <!-- 앱 추가 SplitButton (기본=설치된 앱에서 고르기, 드롭다운=실행 파일 직접 찾기) -->
+            <SplitButton x:Name="AddAppSplitButton"
+                         Grid.Column="0"
+                         Classes="Primary"
+                         Click="OnAddInstalledAppsClick"
+                         AutomationProperties.Name="앱 추가">
+                <SplitButton.Content>
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6"
+                                VerticalAlignment="Center">
+                        <Path Data="M 7,2 V 12 M 2,7 H 12"
+                              Width="14"
+                              Height="14"
+                              Stroke="{DynamicResource InkOnAccentBrush}"
+                              StrokeThickness="1.8"
+                              StrokeLineCap="Round"
+                              VerticalAlignment="Center" />
+                        <TextBlock Text="앱 추가"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </SplitButton.Content>
+                <SplitButton.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                        <MenuItem Header="설치된 앱에서 고르기"
+                                  Click="OnAddInstalledAppsClick" />
+                        <MenuItem Header="실행 파일 직접 찾기"
+                                  Click="OnAddExecutableClick" />
+                    </MenuFlyout>
+                </SplitButton.Flyout>
+            </SplitButton>
+
+            <!-- 검색 TextBox -->
+            <TextBox x:Name="SearchBox"
+                     Grid.Column="1"
+                     Classes="SearchBox"
+                     Watermark="앱 검색"
+                     TextChanged="OnSearchTextChanged"
+                     AutomationProperties.Name="앱 검색">
+                <TextBox.InnerLeftContent>
+                    <Path Data="M 6.5,2 A 4.5,4.5 0 1 0 6.5,11 A 4.5,4.5 0 1 0 6.5,2 Z M 10,10 L 13.5,13.5"
+                          Width="14"
+                          Height="14"
+                          Margin="10,0,4,0"
+                          Stroke="{DynamicResource InkMutedBrush}"
+                          StrokeThickness="1.5"
+                          StrokeLineCap="Round"
+                          VerticalAlignment="Center"
+                          IsHitTestVisible="False" />
+                </TextBox.InnerLeftContent>
+                <TextBox.InnerRightContent>
+                    <Button x:Name="SearchClearInlineButton"
+                            Classes="LinkButton"
+                            Content="✕"
+                            Padding="6,2"
+                            Margin="0,0,4,0"
+                            IsVisible="False"
+                            Click="OnClearSearchClick"
+                            AutomationProperties.Name="검색 지우기" />
+                </TextBox.InnerRightContent>
+            </TextBox>
+
+            <!-- 모두 잠그기 ▾ (모두 잠그기 / 모두 열기) -->
+            <DropDownButton x:Name="LockAllDropDownButton"
+                            Grid.Column="2"
+                            Content="모두 잠그기"
+                            AutomationProperties.Name="모두 잠그기 메뉴">
+                <DropDownButton.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                        <MenuItem Header="모두 잠그기"
+                                  Click="OnLockAllClick" />
+                        <MenuItem Header="모두 열기"
+                                  Click="OnUnlockAllClick" />
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+        </Grid>
+
+        <!-- 3. 다중 선택 액션 막대 -->
+        <Border x:Name="BulkActionBar"
+                Grid.Row="2"
+                Classes="SurfaceCard"
+                Padding="12,8"
+                Margin="0,0,0,12"
+                IsVisible="False"
+                AutomationProperties.Name="선택한 앱 일괄 작업">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto"
+                  ColumnSpacing="8">
+                <TextBlock x:Name="BulkSelectionText"
+                           Grid.Column="0"
+                           Classes="body"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Margin="4,0,4,0"
+                           Text="선택한 0개:" />
+
+                <Button Grid.Column="1"
+                        Content="잠그기"
+                        Padding="10,5"
+                        Click="OnBulkLockClick"
+                        AutomationProperties.Name="선택한 앱 잠그기" />
+
+                <Button Grid.Column="2"
+                        Content="열기"
+                        Padding="10,5"
+                        Click="OnBulkUnlockClick"
+                        AutomationProperties.Name="선택한 앱 열기" />
+
+                <Button Grid.Column="3"
+                        Classes="Danger"
+                        Content="제거"
+                        Padding="10,5"
+                        Click="OnBulkRemoveClick"
+                        AutomationProperties.Name="선택한 앱 제거" />
+
+                <Button Grid.Column="5"
+                        Classes="LinkButton"
+                        Content="선택 해제"
+                        Click="OnClearSelectionClick"
+                        AutomationProperties.Name="선택 해제" />
+            </Grid>
+        </Border>
+
+        <!-- 4. 보호 앱 목록 / 빈 상태 / 검색 결과 없음 -->
+        <Border Grid.Row="3"
+                Classes="SurfaceCard"
+                ClipToBounds="True">
+            <Grid>
+                <!-- 보호 앱 목록 -->
+                <ScrollViewer x:Name="AppsListScrollViewer"
+                              VerticalScrollBarVisibility="Auto"
+                              IsVisible="False">
+                    <ItemsControl x:Name="AppsItemsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ProtectedAppViewModel">
+                                <Border Classes="AppRow"
+                                        Focusable="True"
+                                        PointerPressed="OnRowPointerPressed"
+                                        KeyDown="OnRowKeyDown"
+                                        AutomationProperties.Name="{Binding AutomationName}">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
+                                          ColumnSpacing="12">
+                                        <!-- 다중 선택 체크박스 -->
+                                        <CheckBox Grid.Column="0"
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  VerticalAlignment="Center"
+                                                  AutomationProperties.Name="{Binding Name}" />
+
+                                        <!-- 아이콘 받침 (잠긴 행 = LatchSubtleBrush) -->
+                                        <Border Grid.Column="1"
+                                                Classes="AppRowIconBadge"
+                                                Classes.locked="{Binding IsLocked}"
+                                                VerticalAlignment="Center">
+                                            <Grid>
+                                                <Image Source="{Binding Icon}"
+                                                       Width="32"
+                                                       Height="32"
+                                                       Stretch="Uniform"
+                                                       IsVisible="{Binding HasIcon}" />
+                                                <Path Data="M 4,4 H 11 V 11 H 4 Z M 13,4 H 20 V 11 H 13 Z M 4,13 H 11 V 20 H 4 Z M 13,13 H 20 V 20 H 13 Z"
+                                                      Width="20"
+                                                      Height="20"
+                                                      Stroke="{DynamicResource InkMutedBrush}"
+                                                      StrokeThickness="1.5"
+                                                      StrokeJoin="Round"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      IsVisible="{Binding HasNoIcon}" />
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- 앱 이름 + 경로(말줄임 + 툴팁) -->
+                                        <StackPanel Grid.Column="2"
+                                                    Spacing="2"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}"
+                                                       Classes="app-name"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding Name}" />
+                                            <TextBlock Text="{Binding Path}"
+                                                       Classes="caption"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding Path}" />
+                                        </StackPanel>
+
+                                        <!-- 정책 요약 태그 -->
+                                        <Border Grid.Column="3"
+                                                Classes="StatusChip"
+                                                IsVisible="{Binding HasPolicySummary}"
+                                                VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding PolicySummary}" />
+                                        </Border>
+
+                                        <!-- 잠금 토글 + 잠김/열림 글자 -->
+                                        <ToggleSwitch Grid.Column="4"
+                                                      Classes="LatchToggleSwitch"
+                                                      IsChecked="{Binding IsLocked, Mode=OneWay}"
+                                                      Click="OnAppToggleClick"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="{Binding AutomationName}" />
+
+                                        <!-- '…' 행 메뉴 -->
+                                        <Button Grid.Column="5"
+                                                Classes="RowMenuButton"
+                                                Content="…"
+                                                VerticalAlignment="Center"
+                                                ToolTip.Tip="더 보기"
+                                                AutomationProperties.Name="더 보기">
+                                            <Button.Flyout>
+                                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                    <MenuItem Header="실행 정책"
+                                                              IsEnabled="{Binding CanConfigureLaunchPolicy}"
+                                                              Click="OnRowPolicyMenuClick" />
+                                                    <MenuItem Header="폴더에서 보기"
+                                                              IsEnabled="{Binding CanOpenFolder}"
+                                                              Click="OnRowOpenFolderMenuClick" />
+                                                    <Separator />
+                                                    <MenuItem Header="목록에서 제거"
+                                                              Click="OnRowRemoveMenuClick" />
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- 빈 상태 (7.2절 문구) -->
+                <StackPanel x:Name="EmptyStatePanel"
+                            Spacing="{StaticResource Space3}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            MaxWidth="420"
+                            Margin="24"
+                            IsVisible="False">
+                    <TextBlock Text="아직 보호 중인 앱이 없습니다."
+                               Classes="section-title"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center" />
+                    <TextBlock Text="잠그고 싶은 앱을 추가하면 실행할 때 PIN을 묻습니다."
+                               Classes="body"
+                               Foreground="{DynamicResource InkMutedBrush}"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <Button Classes="Primary"
+                            Content="설치된 앱에서 고르기"
+                            Margin="0,8,0,0"
+                            HorizontalAlignment="Center"
+                            Click="OnAddInstalledAppsClick"
+                            AutomationProperties.Name="설치된 앱에서 고르기" />
+                </StackPanel>
+
+                <!-- 검색 결과 없음 (7.2절 문구) -->
+                <StackPanel x:Name="NoSearchResultsPanel"
+                            Spacing="{StaticResource Space3}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            MaxWidth="420"
+                            Margin="24"
+                            IsVisible="False">
+                    <TextBlock x:Name="NoSearchResultsText"
+                               Text="일치하는 앱이 없습니다."
+                               Classes="body"
+                               Foreground="{DynamicResource InkMutedBrush}"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <Button Content="검색 지우기"
+                            HorizontalAlignment="Center"
+                            Click="OnClearSearchClick"
+                            AutomationProperties.Name="검색 지우기" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

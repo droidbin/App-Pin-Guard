@@ -1,0 +1,620 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 앱 전체 기본 글꼴 및 바탕 -->
+    <Style Selector="Window">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="Background" Value="{DynamicResource CanvasBrush}" />
+    </Style>
+
+    <Style Selector="TemplatedControl">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+    </Style>
+
+    <!-- 타이포그래피 위계 (5절) -->
+    <Style Selector="TextBlock.page-title">
+        <Setter Property="FontSize" Value="{StaticResource FontSizePageTitle}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightPageTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="TextBlock.section-title">
+        <Setter Property="FontSize" Value="{StaticResource FontSizeSectionTitle}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightSectionTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="TextBlock.app-name">
+        <Setter Property="FontSize" Value="{StaticResource FontSizeAppName}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightAppName}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="TextBlock.body">
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightBody}" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="TextBlock.caption">
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightCaption}" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+    </Style>
+
+    <!-- 카드 면 -->
+    <Style Selector="Border.SurfaceCard">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+    </Style>
+
+    <!-- AppRow: 목록 행 (높이 64, 1px 하단 구분선, 호버 강조) -->
+    <Style Selector="Border.AppRow">
+        <Setter Property="MinHeight" Value="{StaticResource AppRowHeight}" />
+        <Setter Property="Padding" Value="{StaticResource AppRowPadding}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+
+    <Style Selector="Border.AppRow:pointerover">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+    </Style>
+
+    <Style Selector="ListBoxItem.AppRow">
+        <Setter Property="MinHeight" Value="{StaticResource AppRowHeight}" />
+        <Setter Property="Padding" Value="{StaticResource AppRowPadding}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+
+    <Style Selector="ListBoxItem.AppRow:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+    </Style>
+
+    <Style Selector="ListBoxItem.AppRow:selected /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfacePressedBrush}" />
+    </Style>
+
+    <!-- AppRow 아이콘 받침 (잠김 행은 LatchSubtleBrush) -->
+    <Style Selector="Border.AppRowIconBadge">
+        <Setter Property="Width" Value="{StaticResource AppIconContainerSize}" />
+        <Setter Property="Height" Value="{StaticResource AppIconContainerSize}" />
+        <Setter Property="CornerRadius" Value="{StaticResource SurfaceCornerRadius}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+    </Style>
+
+    <Style Selector="Border.AppRowIconBadge.locked">
+        <Setter Property="Background" Value="{DynamicResource LatchSubtleBrush}" />
+    </Style>
+
+    <!-- LatchToggleSwitch: 켜짐=LatchBrush(놋쇠), 꺼짐=회색 -->
+    <Style Selector="ToggleSwitch.LatchToggleSwitch">
+        <Setter Property="OnContent" Value="잠김" />
+        <Setter Property="OffContent" Value="열림" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch:checked">
+        <Setter Property="Foreground" Value="{DynamicResource LatchBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch /template/ Border#OuterBorder">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlNeutralBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch:pointerover /template/ Border#OuterBorder">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlNeutralHoverBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch:pressed /template/ Border#OuterBorder">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlNeutralPressedBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch /template/ Ellipse#SwitchKnobOff">
+        <Setter Property="Fill" Value="{DynamicResource ControlKnobOffBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch:checked /template/ Border#SwitchKnobBounds">
+        <Setter Property="Background" Value="{DynamicResource LatchBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource LatchBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch:checked:pointerover /template/ Border#SwitchKnobBounds">
+        <Setter Property="Background" Value="{DynamicResource LatchHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource LatchHoverBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch:checked:pressed /template/ Border#SwitchKnobBounds">
+        <Setter Property="Background" Value="{DynamicResource LatchPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource LatchPressedBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.LatchToggleSwitch:checked /template/ Ellipse#SwitchKnobOn">
+        <Setter Property="Fill" Value="{DynamicResource LatchOnFillBrush}" />
+    </Style>
+
+    <!-- StatusChip: 기본(열림)=무채색 외곽선, .locked=놋쇠, .danger=위험 -->
+    <Style Selector="Border.StatusChip">
+        <Setter Property="CornerRadius" Value="{StaticResource ChipCornerRadius}" />
+        <Setter Property="Padding" Value="8,3" />
+        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Border.StatusChip TextBlock">
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightCaption}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+    </Style>
+
+    <Style Selector="Border.StatusChip.locked">
+        <Setter Property="Background" Value="{DynamicResource LatchSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource LatchSubtleBrush}" />
+    </Style>
+
+    <Style Selector="Border.StatusChip.locked TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource LatchBrush}" />
+    </Style>
+
+    <Style Selector="Border.StatusChip.danger">
+        <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerSubtleBrush}" />
+    </Style>
+
+    <Style Selector="Border.StatusChip.danger TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+    </Style>
+
+    <!-- 기본 Button -->
+    <Style Selector="Button">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfacePressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <!-- 주요 Button (InkBrush, 놋쇠 아님) -->
+    <Style Selector="Button.Primary, Button.accent">
+        <Setter Property="Background" Value="{DynamicResource InkBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Button.Primary:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource InkHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkHoverBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <Style Selector="Button.Primary:pressed /template/ ContentPresenter#PART_ContentPresenter, Button.accent:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource InkPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkPressedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <!-- 위험 Button -->
+    <Style Selector="Button.Danger">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+    </Style>
+
+    <Style Selector="Button.Danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+    </Style>
+
+    <!-- PIN 입력 슬롯 -->
+    <Style Selector="Border.PinSlot">
+        <Setter Property="Width" Value="44" />
+        <Setter Property="Height" Value="52" />
+        <Setter Property="CornerRadius" Value="{StaticResource PinSlotCornerRadius}" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1.5" />
+    </Style>
+
+    <Style Selector="Border.PinSlot.active">
+        <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+
+    <Style Selector="Border.PinSlot.filled">
+        <Setter Property="BorderBrush" Value="{DynamicResource InkMutedBrush}" />
+    </Style>
+
+    <Style Selector="Border.PinSlot.error">
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+        <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}" />
+    </Style>
+
+    <Style Selector="TextBlock.PinSlotGlyph">
+        <Setter Property="FontSize" Value="{StaticResource FontSizePinDigit}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightPinDigit}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- 제목표시줄 동작 버튼 -->
+    <Style Selector="Button.TitleBarAction">
+        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style Selector="Button.TitleBarAction:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Button.TitleBarAction:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfacePressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <!-- 링크/보조 버튼 -->
+    <Style Selector="Button.LinkButton">
+        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style Selector="Button.LinkButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Button.LinkButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfacePressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <!-- 왼쪽 내비게이션 레일 항목 -->
+    <Style Selector="Button.NavRailItem">
+        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style Selector="Button.NavRailItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Button.NavRailItem.selected">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style Selector="Button.NavRailItem.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Button.NavRailItem.compact">
+        <Setter Property="Padding" Value="0,10" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- 알림 InfoBar -->
+    <Style Selector="Border.InfoBar">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+        <Setter Property="Padding" Value="14,10" />
+    </Style>
+
+    <Style Selector="Border.InfoBar.warning">
+        <Setter Property="Background" Value="{DynamicResource LatchSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource LatchBrush}" />
+    </Style>
+
+    <Style Selector="Border.InfoBar.error">
+        <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+    </Style>
+
+    <!-- 걸쇠 배지 및 팝업 카드 -->
+    <Style Selector="Border.LatchBadge">
+        <Setter Property="Width" Value="72" />
+        <Setter Property="Height" Value="72" />
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Background" Value="{DynamicResource LatchSubtleBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Border.PopupCard">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+    </Style>
+
+    <!-- 온보딩 단계 점 -->
+    <Style Selector="Border.StepDot">
+        <Setter Property="Width" Value="24" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style Selector="Border.StepDot.active">
+        <Setter Property="Background" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Border.StepDot TextBlock">
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Border.StepDot.active TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <!-- 주요 SplitButton (InkBrush, 놋쇠 아님) -->
+    <Style Selector="SplitButton.Primary">
+        <Setter Property="Background" Value="{DynamicResource InkBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style Selector="SplitButton.Primary /template/ Button#PART_PrimaryButton">
+        <Setter Property="Background" Value="{DynamicResource InkBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="SplitButton.Primary /template/ Button#PART_SecondaryButton">
+        <Setter Property="Background" Value="{DynamicResource InkBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="SplitButton.Primary /template/ Button#PART_PrimaryButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource InkHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkHoverBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <Style Selector="SplitButton.Primary /template/ Button#PART_SecondaryButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource InkHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkHoverBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <Style Selector="SplitButton.Primary /template/ Button#PART_PrimaryButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource InkPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkPressedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <Style Selector="SplitButton.Primary /template/ Button#PART_SecondaryButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource InkPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkPressedBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <!-- 행 메뉴 버튼 ('…') -->
+    <Style Selector="Button.RowMenuButton">
+        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button.RowMenuButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfacePressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Button.RowMenuButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SurfacePressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <!-- 검색 TextBox -->
+    <Style Selector="TextBox.SearchBox">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- 필드 검증 오류 문구 -->
+    <Style Selector="TextBlock.field-error">
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="LineHeight" Value="{StaticResource LineHeightCaption}" />
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- 상세 패널용 콤팩트 TimePicker -->
+    <Style Selector="TimePicker.CompactTimePicker">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+    </Style>
+
+    <Style Selector="TimePicker.CompactTimePicker /template/ Button#PART_FlyoutButton">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+    </Style>
+
+    <!-- 일반 설정용 ToggleSwitch (InkBrush 사용, 놋쇠색 아님) -->
+    <Style Selector="ToggleSwitch.SettingToggleSwitch">
+        <Setter Property="OnContent" Value="켜짐" />
+        <Setter Property="OffContent" Value="꺼짐" />
+        <Setter Property="Foreground" Value="{DynamicResource InkMutedBrush}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch:checked">
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch /template/ Border#OuterBorder">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlNeutralBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch:pointerover /template/ Border#OuterBorder">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlNeutralHoverBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch:pressed /template/ Border#OuterBorder">
+        <Setter Property="Background" Value="{DynamicResource ControlNeutralPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlNeutralPressedBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch /template/ Ellipse#SwitchKnobOff">
+        <Setter Property="Fill" Value="{DynamicResource ControlKnobOffBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch:checked /template/ Border#SwitchKnobBounds">
+        <Setter Property="Background" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch:checked:pointerover /template/ Border#SwitchKnobBounds">
+        <Setter Property="Background" Value="{DynamicResource InkHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkHoverBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch:checked:pressed /template/ Border#SwitchKnobBounds">
+        <Setter Property="Background" Value="{DynamicResource InkPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource InkPressedBrush}" />
+    </Style>
+
+    <Style Selector="ToggleSwitch.SettingToggleSwitch:checked /template/ Ellipse#SwitchKnobOn">
+        <Setter Property="Fill" Value="{DynamicResource InkOnAccentBrush}" />
+    </Style>
+
+    <!-- 단축키 입력 상자 -->
+    <Style Selector="TextBox.HotkeyBox">
+        <Setter Property="Background" Value="{DynamicResource CanvasBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="MinWidth" Value="176" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- SettingsCard 안 결과/경고/오류 메시지 -->
+    <Style Selector="Border.SettingsCardMessage">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="12,8" />
+    </Style>
+
+    <Style Selector="Border.SettingsCardMessage TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    </Style>
+
+    <Style Selector="Border.SettingsCardMessage.error">
+        <Setter Property="Background" Value="{DynamicResource DangerSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+    </Style>
+
+    <Style Selector="Border.SettingsCardMessage.error TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+    </Style>
+</Styles>

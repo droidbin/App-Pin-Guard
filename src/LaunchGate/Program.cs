@@ -22,7 +22,7 @@ internal static class Gate
             byte result = Authorize(path, string.Empty);
             if (result == GateProtocol.PromptRequired)
             {
-                string pin = Prompt(Path.GetFileName(path));
+                string pin = Prompt(path);
                 if (string.IsNullOrWhiteSpace(pin)) return 1;
                 result = Authorize(path, pin);
             }
@@ -66,26 +66,14 @@ internal static class Gate
         }
     }
 
-    private static string Prompt(string name)
+    private static string Prompt(string appPath)
     {
         Application.EnableVisualStyles();
-        using (var form = new Form { Text = ProductBrand.Name, Width = 410, Height = 190,
-            StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog,
-            MaximizeBox = false, MinimizeBox = false, AutoScaleMode = AutoScaleMode.Font })
+        using (var form = new GateForm(appPath))
         {
-            var label = new Label { Left = 16, Top = 16, Width = 365, Height = 34,
-                Text = name + " 실행 PIN을 입력하세요.", AutoEllipsis = true };
-            var pin = new TextBox { Left = 16, Top = 57, Width = 365, MaxLength = 32,
-                UseSystemPasswordChar = true, AccessibleName = "실행 PIN" };
-            var open = new Button { Text = "실행", Left = 222, Top = 95, Width = 75, DialogResult = DialogResult.OK };
-            var cancel = new Button { Text = "취소", Left = 306, Top = 95, Width = 75, DialogResult = DialogResult.Cancel };
-            form.Controls.AddRange(new Control[] { label, pin, open, cancel });
-            form.AcceptButton = open;
-            form.CancelButton = cancel;
-            form.ActiveControl = pin;
             DialogResult result = form.ShowDialog();
             EnsureCursorVisible();
-            return result == DialogResult.OK ? pin.Text : null;
+            return result == DialogResult.OK ? form.PinText : null;
         }
     }
 

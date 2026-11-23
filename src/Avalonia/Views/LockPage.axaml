@@ -1,0 +1,109 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:WindowsAppProtector.Controls"
+             x:Class="WindowsAppProtector.Views.LockPage">
+    <Grid HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch"
+          Margin="{StaticResource WindowPadding}">
+        <StackPanel Spacing="{StaticResource Space4}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="360">
+
+            <!-- 놋쇠 걸쇠 아이콘 (성공 시 고리 0.3초 열림 모션) -->
+            <Border Classes="LatchBadge"
+                    AutomationProperties.Name="잠김 아이콘">
+                <Canvas Width="40"
+                        Height="40"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        ClipToBounds="False">
+                    <Path x:Name="ShacklePath"
+                          Data="M 13,18 V 12 A 7,7 0 0 1 27,12 V 18"
+                          Stroke="{DynamicResource LatchBrush}"
+                          StrokeThickness="2.8"
+                          StrokeLineCap="Round" />
+                    <Path Data="M 9,18 H 31 A 3,3 0 0 1 34,21 V 33 A 3,3 0 0 1 31,36 H 9 A 3,3 0 0 1 6,33 V 21 A 3,3 0 0 1 9,18 Z"
+                          Fill="{DynamicResource LatchBrush}" />
+                    <Ellipse Width="4.4"
+                             Height="4.4"
+                             Canvas.Left="17.8"
+                             Canvas.Top="23.4"
+                             Fill="{DynamicResource LatchSubtleBrush}" />
+                    <Rectangle Width="2.4"
+                               Height="4.6"
+                               RadiusX="1.2"
+                               RadiusY="1.2"
+                               Canvas.Left="18.8"
+                               Canvas.Top="26.4"
+                               Fill="{DynamicResource LatchSubtleBrush}" />
+                </Canvas>
+            </Border>
+
+            <!-- 제목 및 안내 -->
+            <StackPanel Spacing="{StaticResource Space1}"
+                        HorizontalAlignment="Center">
+                <TextBlock Text="App PIN Guard"
+                           Classes="section-title"
+                           HorizontalAlignment="Center" />
+                <TextBlock x:Name="SubtitleText"
+                           Text="PIN을 입력해 관리 화면을 여세요"
+                           Classes="body"
+                           Foreground="{DynamicResource InkMutedBrush}"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- PIN 입력 칸 -->
+            <controls:PinInput x:Name="PinInputControl"
+                               Margin="0,8,0,0" />
+
+            <!-- 확인 버튼 -->
+            <Button x:Name="UnlockButton"
+                    Classes="Primary"
+                    Content="확인"
+                    MinWidth="148"
+                    HorizontalAlignment="Center"
+                    IsEnabled="False"
+                    Click="OnUnlockClick"
+                    AutomationProperties.Name="PIN 확인" />
+
+            <!-- PIN 복구 안내 버튼 및 Popup -->
+            <Grid HorizontalAlignment="Center"
+                  Margin="0,4,0,0">
+                <Button x:Name="ForgotPinButton"
+                        Classes="LinkButton"
+                        Content="PIN을 잊었나요?"
+                        Click="OnForgotPinClick"
+                        AutomationProperties.Name="PIN을 잊었나요?" />
+
+                <Popup x:Name="ForgotPinPopup"
+                       PlacementTarget="{Binding #ForgotPinButton}"
+                       Placement="Bottom"
+                       VerticalOffset="8"
+                       IsLightDismissEnabled="True">
+                    <Border Classes="PopupCard"
+                            MaxWidth="340">
+                        <StackPanel Spacing="{StaticResource Space3}">
+                            <TextBlock Text="PIN 복구 안내"
+                                       Classes="app-name"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="보안을 위해 설정한 PIN은 앱에서 복구하거나 확인할 수 없습니다."
+                                       Classes="caption"
+                                       Foreground="{DynamicResource InkBrush}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Text="관리자 계정으로 앱을 재설치하거나, 보호 설정 파일(%ProgramData%\Windows App Protector\config.json)을 초기화한 뒤 새 PIN을 설정하세요."
+                                       Classes="caption"
+                                       TextWrapping="Wrap" />
+                            <Button Content="닫기"
+                                    HorizontalAlignment="Right"
+                                    Padding="12,6"
+                                    Click="OnCloseForgotPinPopupClick"
+                                    AutomationProperties.Name="복구 안내 닫기" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
+            </Grid>
+        </StackPanel>
+    </Grid>
+</UserControl>

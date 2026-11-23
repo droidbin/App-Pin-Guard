@@ -1,6 +1,6 @@
 # App PIN Guard
 
-WinUI 3 기반 Windows 앱 실행 차단 도구입니다. 보호 목록에 등록한 `.exe` 파일을 Windows IFEO(Image File Execution Options) 규칙 또는 창 감시 방식으로 차단합니다.
+Avalonia 기반 Windows 앱 실행 차단 도구입니다. 보호 목록에 등록한 `.exe` 파일을 Windows IFEO(Image File Execution Options) 규칙 또는 창 감시 방식으로 차단합니다.
 
 제품명은 **App PIN Guard**입니다. 공개 안정판 `1.3.0`까지는 이전 이름인 Windows App Protector로 배포되었으며, 2.0 개발 빌드부터 App PIN Guard 이름을 사용합니다.
 
@@ -21,7 +21,7 @@ dist\installer\Setup.exe
 - 기존 버전 및 `.old` 설치 폴더 제거, 이전 바로가기·시작 작업·제거 등록 정리
 - PIN·사용자 설정·보호 앱 목록 보존
 - 새 설치 파일의 압축·필수 파일·앱 실행을 검증한 뒤, 기존 버전을 제거하고 `C:\Program Files\Windows App Protector <버전>`에 설치
-- .NET 및 Windows App SDK 런타임을 앱 폴더에 포함하므로 별도 런타임 설치나 설치 중 인터넷 연결 불필요
+- .NET 및 Avalonia 런타임을 앱 폴더에 포함하므로 별도 런타임 설치나 설치 중 인터넷 연결 불필요
 - 기존 버전 제거 실패 시 새 설치 중단
 - 선택 시 바탕화면 및 시작 메뉴 바로가기 생성
 - Windows 앱 제거 목록 등록
@@ -29,7 +29,7 @@ dist\installer\Setup.exe
 
 ## 빌드
 
-개발 PC에서 아래 명령만 실행하면 WinUI 앱과 설치 파일이 함께 생성됩니다.
+개발 PC에서 아래 명령만 실행하면 Avalonia 앱과 설치 파일이 함께 생성됩니다.
 
 ```powershell
 .\build_setup.bat
@@ -84,7 +84,7 @@ dist\installer\Setup.exe
 - 앱 실행 파일, 창/작업 표시줄, 시스템 트레이 및 설치 프로그램에 방패형 아이콘 적용
 - 2.0 설정·PIN 해시 저장 위치: `%PROGRAMDATA%\Windows App Protector\config.json`
 - 처음 시작할 때 기존 정책을 한 번 이전합니다. 공유 폴더에 등록된 보호 정책을 우선하며, 이전이 끝나면 사용자 프로필의 1.x 설정과 PIN 백업은 2.0에서 사용하지 않습니다. 1.x 복귀용 기존 파일은 그대로 남습니다.
-- Windows App SDK 2.0.1 기반 WinUI 3 앱
+- .NET 8 기반 Avalonia 데스크톱 앱
 - 설치형 `Setup.exe` 패키지
 
 ## 기본 단축키

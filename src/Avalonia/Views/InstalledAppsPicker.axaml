@@ -1,0 +1,188 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:WindowsAppProtector.Views"
+        x:Class="WindowsAppProtector.Views.InstalledAppsPicker"
+        Title="설치된 앱에서 고르기"
+        Width="620"
+        Height="560"
+        MinWidth="480"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="{StaticResource AppFontFamily}">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto"
+          Margin="24,20,24,20">
+
+        <!-- 헤더 -->
+        <StackPanel Grid.Row="0"
+                    Spacing="{StaticResource Space1}"
+                    Margin="0,0,0,16">
+            <TextBlock Text="설치된 앱에서 고르기"
+                       Classes="section-title" />
+            <TextBlock Text="잠그고 싶은 앱을 선택하세요. 여러 개를 한 번에 고를 수 있습니다."
+                       Classes="caption"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- 검색 + 선택 개수 -->
+        <Grid Grid.Row="1"
+              ColumnDefinitions="*,Auto"
+              ColumnSpacing="12"
+              Margin="0,0,0,12">
+            <TextBox x:Name="SearchBox"
+                     Grid.Column="0"
+                     Classes="SearchBox"
+                     Watermark="설치된 앱 검색"
+                     TextChanged="OnSearchTextChanged"
+                     AutomationProperties.Name="설치된 앱 검색" />
+
+            <TextBlock x:Name="SelectedCountText"
+                       Grid.Column="1"
+                       Classes="caption"
+                       VerticalAlignment="Center"
+                       Text="선택한 앱 없음" />
+        </Grid>
+
+        <!-- 목록 카드 -->
+        <Border Grid.Row="2"
+                Classes="SurfaceCard"
+                ClipToBounds="True">
+            <Grid>
+                <!-- 로딩 중 -->
+                <StackPanel x:Name="LoadingPanel"
+                            Spacing="{StaticResource Space3}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsVisible="True">
+                    <ProgressBar IsIndeterminate="True"
+                                 Width="200" />
+                    <TextBlock Text="설치된 앱 목록을 불러오는 중입니다..."
+                               Classes="caption"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- 오류 / 빈 목록 / 검색 결과 없음 -->
+                <StackPanel x:Name="EmptyPanel"
+                            Spacing="{StaticResource Space3}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Margin="24"
+                            IsVisible="False">
+                    <TextBlock x:Name="EmptyMessageText"
+                               Text="추가할 설치 앱을 찾을 수 없습니다."
+                               Classes="body"
+                               Foreground="{DynamicResource InkMutedBrush}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="{StaticResource Space2}"
+                                HorizontalAlignment="Center">
+                        <Button x:Name="ClearSearchButton"
+                                Content="검색 지우기"
+                                IsVisible="False"
+                                Click="OnClearSearchClick" />
+                        <Button x:Name="RetryButton"
+                                Content="다시 불러오기"
+                                IsVisible="False"
+                                Click="OnRetryClick" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 앱 목록 -->
+                <ScrollViewer x:Name="AppsScrollViewer"
+                              VerticalScrollBarVisibility="Auto"
+                              IsVisible="False">
+                    <ItemsControl x:Name="AppsItemsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="views:InstalledAppPickerItem">
+                                <Border Classes="AppRow"
+                                        MinHeight="60"
+                                        Padding="12,8"
+                                        PointerPressed="OnRowPointerPressed">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto"
+                                          ColumnSpacing="12">
+                                        <CheckBox Grid.Column="0"
+                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                  IsEnabled="{Binding CanSelect}"
+                                                  VerticalAlignment="Center"
+                                                  AutomationProperties.Name="{Binding Name}" />
+
+                                        <Border Grid.Column="1"
+                                                Classes="AppRowIconBadge"
+                                                VerticalAlignment="Center">
+                                            <Grid>
+                                                <Image Source="{Binding Icon}"
+                                                       Width="32"
+                                                       Height="32"
+                                                       Stretch="Uniform"
+                                                       IsVisible="{Binding HasIcon}" />
+                                                <Path Data="M 4,4 H 11 V 11 H 4 Z M 13,4 H 20 V 11 H 13 Z M 4,13 H 11 V 20 H 4 Z M 13,13 H 20 V 20 H 13 Z"
+                                                      Width="20"
+                                                      Height="20"
+                                                      Stroke="{DynamicResource InkMutedBrush}"
+                                                      StrokeThickness="1.5"
+                                                      StrokeJoin="Round"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      IsVisible="{Binding HasNoIcon}" />
+                                            </Grid>
+                                        </Border>
+
+                                        <StackPanel Grid.Column="2"
+                                                    Spacing="2"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}"
+                                                       Classes="app-name"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding Name}" />
+                                            <TextBlock Text="{Binding Detail}"
+                                                       Classes="caption"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding Detail}" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="3"
+                                                    Orientation="Horizontal"
+                                                    Spacing="6"
+                                                    VerticalAlignment="Center">
+                                            <Border Classes="StatusChip"
+                                                    IsVisible="{Binding IsAlreadyRegistered}">
+                                                <TextBlock Text="등록됨" />
+                                            </Border>
+                                            <Border Classes="StatusChip"
+                                                    IsVisible="{Binding ShowRecommendedBadge}">
+                                                <TextBlock Text="자주 잠금" />
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- 하단 버튼 -->
+        <Grid Grid.Row="3"
+              ColumnDefinitions="*,Auto,Auto"
+              ColumnSpacing="8"
+              Margin="0,16,0,0">
+            <Button x:Name="CancelButton"
+                    Grid.Column="1"
+                    Content="취소"
+                    MinWidth="88"
+                    IsCancel="True"
+                    Click="OnCancelClick" />
+
+            <Button x:Name="ConfirmButton"
+                    Grid.Column="2"
+                    Classes="Primary"
+                    Content="추가"
+                    MinWidth="128"
+                    IsDefault="True"
+                    IsEnabled="False"
+                    Click="OnConfirmClick" />
+        </Grid>
+    </Grid>
+</Window>

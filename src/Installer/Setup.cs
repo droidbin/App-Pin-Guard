@@ -52,7 +52,7 @@ internal static class Setup
             ExtractEmbeddedPayload(zipPath);
             ZipFile.ExtractToDirectory(zipPath, payloadDir);
             foreach (string requiredFile in new[] { ExeName, "WindowsAppProtector.WinUI.dll", ServiceExeName,
-                "WindowsAppProtector.Gate.exe", "WindowsAppProtector.WindowAgent.exe" })
+                "WindowsAppProtector.Gate.exe", "WindowsAppProtector.WindowAgent.exe", "PretendardVariable.ttf" })
             {
                 if (!File.Exists(Path.Combine(payloadDir, requiredFile)))
                 {

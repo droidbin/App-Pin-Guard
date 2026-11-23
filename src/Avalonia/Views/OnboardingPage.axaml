@@ -1,0 +1,339 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:WindowsAppProtector.Controls"
+             xmlns:views="using:WindowsAppProtector.Views"
+             x:Class="WindowsAppProtector.Views.OnboardingPage">
+    <Grid RowDefinitions="Auto,*"
+          MaxWidth="640"
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch"
+          Margin="24,16,24,24">
+
+        <!-- 상단 3단계 표시 -->
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    Spacing="{StaticResource Space3}"
+                    Margin="0,8,0,24">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="{StaticResource Space2}"
+                        VerticalAlignment="Center">
+                <Border x:Name="StepDot1" Classes="StepDot active">
+                    <TextBlock Text="1" />
+                </Border>
+                <TextBlock x:Name="StepLabel1"
+                           Text="PIN 만들기"
+                           Classes="caption"
+                           Foreground="{DynamicResource InkBrush}"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <Border Width="24"
+                    Height="1"
+                    Background="{DynamicResource DividerBrush}"
+                    VerticalAlignment="Center" />
+
+            <StackPanel Orientation="Horizontal"
+                        Spacing="{StaticResource Space2}"
+                        VerticalAlignment="Center">
+                <Border x:Name="StepDot2" Classes="StepDot">
+                    <TextBlock Text="2" />
+                </Border>
+                <TextBlock x:Name="StepLabel2"
+                           Text="잠글 앱 고르기"
+                           Classes="caption"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+
+            <Border Width="24"
+                    Height="1"
+                    Background="{DynamicResource DividerBrush}"
+                    VerticalAlignment="Center" />
+
+            <StackPanel Orientation="Horizontal"
+                        Spacing="{StaticResource Space2}"
+                        VerticalAlignment="Center">
+                <Border x:Name="StepDot3" Classes="StepDot">
+                    <TextBlock Text="3" />
+                </Border>
+                <TextBlock x:Name="StepLabel3"
+                           Text="완료"
+                           Classes="caption"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- 페이지 1: PIN 만들기 -->
+        <Grid x:Name="Step1Panel"
+              Grid.Row="1"
+              IsVisible="True">
+            <StackPanel Spacing="{StaticResource Space4}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MaxWidth="380">
+                <StackPanel Spacing="{StaticResource Space2}"
+                            HorizontalAlignment="Center">
+                    <TextBlock Text="PIN 만들기"
+                               Classes="page-title"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="앱을 열 때 사용할 PIN을 정하세요. 4자리 이상 숫자입니다."
+                               Classes="body"
+                               Foreground="{DynamicResource InkMutedBrush}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="{StaticResource Space2}"
+                            Margin="0,8,0,0">
+                    <TextBlock Text="새 PIN"
+                               Classes="caption"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource InkBrush}"
+                               HorizontalAlignment="Center" />
+                    <controls:PinInput x:Name="NewPinInput" />
+                </StackPanel>
+
+                <StackPanel Spacing="{StaticResource Space2}">
+                    <TextBlock Text="PIN 확인"
+                               Classes="caption"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource InkBrush}"
+                               HorizontalAlignment="Center" />
+                    <controls:PinInput x:Name="ConfirmPinInput" />
+                </StackPanel>
+
+                <Button x:Name="Step1NextButton"
+                        Classes="Primary"
+                        Content="다음"
+                        MinWidth="148"
+                        Margin="0,8,0,0"
+                        HorizontalAlignment="Center"
+                        IsEnabled="False"
+                        Click="OnStep1NextClick"
+                        AutomationProperties.Name="PIN 설정 다음 단계" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 페이지 2: 잠글 앱 고르기 -->
+        <Grid x:Name="Step2Panel"
+              Grid.Row="1"
+              RowDefinitions="Auto,Auto,*,Auto"
+              IsVisible="False">
+            <StackPanel Grid.Row="0"
+                        Spacing="{StaticResource Space1}"
+                        Margin="0,0,0,12">
+                <TextBlock Text="잠글 앱 고르기"
+                           Classes="page-title" />
+                <TextBlock Text="자주 잠그는 앱을 먼저 보여 드립니다. 지금 고르지 않고 건너뛸 수도 있습니다."
+                           Classes="body"
+                           Foreground="{DynamicResource InkMutedBrush}"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Grid Grid.Row="1"
+                  ColumnDefinitions="*,Auto"
+                  Margin="0,0,0,12">
+                <TextBox x:Name="AppSearchBox"
+                         Grid.Column="0"
+                         Watermark="설치된 앱 검색"
+                         TextChanged="OnAppSearchTextChanged"
+                         AutomationProperties.Name="설치된 앱 검색" />
+                <TextBlock x:Name="SelectedCountText"
+                           Grid.Column="1"
+                           Classes="caption"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"
+                           Text="선택한 앱 없음" />
+            </Grid>
+
+            <Border Grid.Row="2"
+                    Classes="SurfaceCard"
+                    ClipToBounds="True">
+                <Grid>
+                    <!-- 로딩 중 -->
+                    <StackPanel x:Name="AppsLoadingPanel"
+                                Spacing="{StaticResource Space3}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsVisible="False">
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="200" />
+                        <TextBlock Text="설치된 앱 목록을 불러오는 중입니다..."
+                                   Classes="caption"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- 오류 / 빈 목록 -->
+                    <StackPanel x:Name="AppsEmptyPanel"
+                                Spacing="{StaticResource Space3}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Margin="24"
+                                IsVisible="False">
+                        <TextBlock x:Name="AppsEmptyMessage"
+                                   Text="표시할 설치 앱이 없습니다."
+                                   Classes="body"
+                                   Foreground="{DynamicResource InkMutedBrush}"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap" />
+                        <Button x:Name="RetryLoadAppsButton"
+                                Content="다시 불러오기"
+                                HorizontalAlignment="Center"
+                                Click="OnRetryLoadAppsClick" />
+                    </StackPanel>
+
+                    <!-- 설치 앱 체크 목록 -->
+                    <ScrollViewer x:Name="AppsListScrollViewer"
+                                  VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="InstalledAppsList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="views:OnboardingAppItem">
+                                    <Border Classes="AppRow"
+                                            MinHeight="56"
+                                            Padding="12,8">
+                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto"
+                                              ColumnSpacing="12">
+                                            <CheckBox Grid.Column="0"
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="{Binding Name}" />
+
+                                            <Border Grid.Column="1"
+                                                    Classes="AppRowIconBadge"
+                                                    Width="36"
+                                                    Height="36"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding Icon}"
+                                                       Width="24"
+                                                       Height="24"
+                                                       Stretch="Uniform" />
+                                            </Border>
+
+                                            <StackPanel Grid.Column="2"
+                                                        Spacing="2"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}"
+                                                           Classes="app-name"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip.Tip="{Binding Name}" />
+                                                <TextBlock Text="{Binding Detail}"
+                                                           Classes="caption"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip.Tip="{Binding Detail}" />
+                                            </StackPanel>
+
+                                            <Border Grid.Column="3"
+                                                    Classes="StatusChip"
+                                                    IsVisible="{Binding IsRecommended}"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="자주 잠금" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="3"
+                  ColumnDefinitions="Auto,*,Auto,Auto"
+                  Margin="0,16,0,0">
+                <Button x:Name="Step2BackButton"
+                        Grid.Column="0"
+                        Content="이전"
+                        Click="OnStep2BackClick" />
+                <TextBlock x:Name="Step2ErrorText"
+                           Grid.Column="1"
+                           Classes="caption"
+                           Foreground="{DynamicResource DangerBrush}"
+                           VerticalAlignment="Center"
+                           Margin="12,0"
+                           TextTrimming="CharacterEllipsis"
+                           IsVisible="False" />
+                <Button x:Name="Step2SkipButton"
+                        Grid.Column="2"
+                        Classes="LinkButton"
+                        Content="건너뛰기"
+                        Margin="0,0,8,0"
+                        Click="OnStep2SkipClick" />
+                <Button x:Name="Step2NextButton"
+                        Grid.Column="3"
+                        Classes="Primary"
+                        Content="다음"
+                        MinWidth="128"
+                        Click="OnStep2NextClick" />
+            </Grid>
+        </Grid>
+
+        <!-- 페이지 3: 완료 -->
+        <Grid x:Name="Step3Panel"
+              Grid.Row="1"
+              IsVisible="False">
+            <StackPanel Spacing="{StaticResource Space6}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MaxWidth="440">
+                <Border Classes="LatchBadge"
+                        AutomationProperties.Name="설정 완료 아이콘">
+                    <Path Data="M 10,20 L 17,27 L 30,13"
+                          Width="40"
+                          Height="40"
+                          Stroke="{DynamicResource LatchBrush}"
+                          StrokeThickness="3"
+                          StrokeLineCap="Round"
+                          StrokeJoin="Round"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center" />
+                </Border>
+
+                <StackPanel Spacing="{StaticResource Space2}"
+                            HorizontalAlignment="Center">
+                    <TextBlock Text="설정이 끝났습니다"
+                               Classes="page-title"
+                               HorizontalAlignment="Center" />
+                    <TextBlock x:Name="CompleteSummaryText"
+                               Text="PIN 설정이 끝났습니다."
+                               Classes="body"
+                               Foreground="{DynamicResource InkMutedBrush}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <Border Classes="SurfaceCard"
+                        Padding="{StaticResource CardPadding}">
+                    <Grid ColumnDefinitions="*,Auto"
+                          ColumnSpacing="16">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="{StaticResource Space1}"
+                                    VerticalAlignment="Center">
+                            <TextBlock Text="Windows 시작 시 자동 실행"
+                                       Classes="app-name" />
+                            <TextBlock Text="PC를 켤 때 트레이에서 자동으로 보호를 시작합니다."
+                                       Classes="caption"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <ToggleSwitch x:Name="AutoStartToggle"
+                                      Grid.Column="1"
+                                      IsChecked="True"
+                                      OnContent="켬"
+                                      OffContent="끔"
+                                      VerticalAlignment="Center"
+                                      AutomationProperties.Name="Windows 시작 시 자동 실행" />
+                    </Grid>
+                </Border>
+
+                <Button x:Name="FinishButton"
+                        Classes="Primary"
+                        Content="시작하기"
+                        MinWidth="160"
+                        HorizontalAlignment="Center"
+                        Click="OnFinishClick"
+                        AutomationProperties.Name="시작하기" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

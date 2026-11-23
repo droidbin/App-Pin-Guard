@@ -1,0 +1,311 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WindowsAppProtector.ViewModels"
+             x:Class="WindowsAppProtector.Views.AppDetailPane"
+             x:DataType="vm:AppDetailViewModel"
+             KeyDown="OnPaneKeyDown">
+
+    <Border x:Name="PaneRootBorder"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource DividerBrush}"
+            BorderThickness="1,1,0,0">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- 상단 헤더: 닫기/뒤로 + 아이콘 + 이름 + 잠금 토글 + 경로 -->
+            <Border Grid.Row="0"
+                    BorderBrush="{DynamicResource DividerBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="20,14,20,16">
+                <StackPanel Spacing="{StaticResource Space3}">
+                    <!-- 패널 바: 오버레이(뒤로) / 사이드 패널(제목+닫기) -->
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Button x:Name="BackButton"
+                                Grid.Column="0"
+                                Classes="LinkButton"
+                                Padding="4,4"
+                                IsVisible="False"
+                                Click="OnCloseClick"
+                                AutomationProperties.Name="목록으로 돌아가기">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="6"
+                                        VerticalAlignment="Center">
+                                <Path Data="M 9,3 L 4,8 L 9,13"
+                                      Width="12"
+                                      Height="12"
+                                      Stroke="{DynamicResource InkBrush}"
+                                      StrokeThickness="1.6"
+                                      StrokeLineCap="Round"
+                                      StrokeJoin="Round"
+                                      VerticalAlignment="Center" />
+                                <TextBlock Text="목록으로"
+                                           Classes="caption"
+                                           Foreground="{DynamicResource InkBrush}"
+                                           FontWeight="Medium"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <TextBlock x:Name="PaneHeaderTitle"
+                                   Grid.Column="0"
+                                   Text="앱 상세"
+                                   Classes="caption"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+
+                        <Button x:Name="CloseButton"
+                                Grid.Column="2"
+                                Classes="LinkButton"
+                                Content="✕"
+                                Padding="6,2"
+                                VerticalAlignment="Center"
+                                Click="OnCloseClick"
+                                ToolTip.Tip="닫기 (Esc)"
+                                AutomationProperties.Name="상세 패널 닫기" />
+                    </Grid>
+
+                    <!-- 아이콘 + 이름 + 잠금 토글 -->
+                    <Grid ColumnDefinitions="Auto,*,Auto"
+                          ColumnSpacing="12">
+                        <Border Grid.Column="0"
+                                Classes="AppRowIconBadge"
+                                Classes.locked="{Binding IsLocked}"
+                                VerticalAlignment="Center">
+                            <Grid>
+                                <Image Source="{Binding AppIcon}"
+                                       Width="32"
+                                       Height="32"
+                                       Stretch="Uniform"
+                                       IsVisible="{Binding HasIcon}" />
+                                <Path Data="M 4,4 H 11 V 11 H 4 Z M 13,4 H 20 V 11 H 13 Z M 4,13 H 11 V 20 H 4 Z M 13,13 H 20 V 20 H 13 Z"
+                                      Width="20"
+                                      Height="20"
+                                      Stroke="{DynamicResource InkMutedBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeJoin="Round"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      IsVisible="{Binding HasNoIcon}" />
+                            </Grid>
+                        </Border>
+
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding AppName}"
+                                   Classes="app-name"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"
+                                   ToolTip.Tip="{Binding AppName}" />
+
+                        <ToggleSwitch x:Name="LockToggleSwitch"
+                                      Grid.Column="2"
+                                      Classes="LatchToggleSwitch"
+                                      IsChecked="{Binding IsLocked, Mode=OneWay}"
+                                      IsEnabled="{Binding IsNotBusy}"
+                                      Click="OnLockToggleClick"
+                                      VerticalAlignment="Center"
+                                      AutomationProperties.Name="{Binding LockToggleAutomationName}" />
+                    </Grid>
+
+                    <!-- 경로 -->
+                    <TextBlock Text="{Binding AppPath}"
+                               Classes="caption"
+                               TextWrapping="Wrap"
+                               MaxLines="2"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding AppPath}" />
+                </StackPanel>
+            </Border>
+
+            <!-- 본문: 실행 정책 설정 -->
+            <ScrollViewer Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="20,16"
+                            Spacing="20">
+                    <!-- 창 차단 전용 앱(스토어 앱 / 브라우저) 안내 -->
+                    <Border Background="{DynamicResource CanvasBrush}"
+                            BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource CardCornerRadius}"
+                            Padding="14,12"
+                            IsVisible="{Binding ShowUnsupportedPolicyNote}">
+                        <TextBlock Text="이 앱은 창 차단 방식으로 보호됩니다. 실행 시 전용 PIN, 유예 시간, 잠그는 시간은 일반 실행 파일(Win32) 앱에서만 설정할 수 있습니다."
+                                   Classes="caption"
+                                   TextWrapping="Wrap" />
+                    </Border>
+
+                    <!-- Win32 실행 정책 폼 -->
+                    <StackPanel Spacing="20"
+                                IsVisible="{Binding SupportsLaunchPolicy}">
+                        <!-- 1. PIN -->
+                        <StackPanel Spacing="{StaticResource Space2}">
+                            <TextBlock Text="PIN"
+                                       Classes="body"
+                                       FontWeight="SemiBold" />
+
+                            <RadioButton GroupName="AppDetailPinModeGroup"
+                                         Content="기본 PIN 사용"
+                                         IsChecked="{Binding UseDefaultPin, Mode=TwoWay}"
+                                         AutomationProperties.Name="기본 PIN 사용" />
+
+                            <RadioButton GroupName="AppDetailPinModeGroup"
+                                         Content="이 앱 전용 PIN"
+                                         IsChecked="{Binding UseCustomPin, Mode=TwoWay}"
+                                         AutomationProperties.Name="이 앱 전용 PIN" />
+
+                            <StackPanel Margin="24,2,0,0"
+                                        Spacing="{StaticResource Space1}"
+                                        IsVisible="{Binding UseCustomPin}">
+                                <TextBox x:Name="NewPinTextBox"
+                                         Text="{Binding NewPin, Mode=TwoWay}"
+                                         PasswordChar="•"
+                                         MaxLength="32"
+                                         Watermark="{Binding NewPinWatermark}"
+                                         AutomationProperties.Name="이 앱 전용 새 PIN" />
+
+                                <TextBlock Text="{Binding ExistingPinHint}"
+                                           Classes="caption"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding HasExistingPinHint}" />
+
+                                <TextBlock Text="{Binding PinError}"
+                                           Classes="field-error"
+                                           IsVisible="{Binding HasPinError}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- 2. 다시 묻기까지 -->
+                        <StackPanel Spacing="{StaticResource Space2}">
+                            <TextBlock Text="다시 묻기까지"
+                                       Classes="body"
+                                       FontWeight="SemiBold" />
+
+                            <ComboBox ItemsSource="{Binding GracePeriodOptions}"
+                                      SelectedItem="{Binding SelectedGracePeriod, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      AutomationProperties.Name="다시 묻기까지 유예 시간">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:GracePeriodOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+
+                            <StackPanel Spacing="{StaticResource Space1}"
+                                        IsVisible="{Binding IsCustomGracePeriod}">
+                                <Grid ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="8">
+                                    <TextBox x:Name="CustomMinutesTextBox"
+                                             Grid.Column="0"
+                                             Text="{Binding CustomMinutesText, Mode=TwoWay}"
+                                             MaxLength="4"
+                                             Watermark="0~1440"
+                                             AutomationProperties.Name="직접 입력 유예 시간(분)" />
+
+                                    <TextBlock Grid.Column="1"
+                                               Text="분"
+                                               Classes="body"
+                                               Foreground="{DynamicResource InkMutedBrush}"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+
+                                <TextBlock Text="{Binding GraceMinutesError}"
+                                           Classes="field-error"
+                                           IsVisible="{Binding HasGraceMinutesError}" />
+                            </StackPanel>
+
+                            <CheckBox Content="앱을 모두 닫으면 바로 다시 잠그기"
+                                      IsChecked="{Binding RelockOnExit, Mode=TwoWay}"
+                                      Margin="0,4,0,0"
+                                      AutomationProperties.Name="앱을 모두 닫으면 바로 다시 잠그기" />
+                        </StackPanel>
+
+                        <!-- 3. 잠그는 시간 -->
+                        <StackPanel Spacing="{StaticResource Space2}">
+                            <TextBlock Text="잠그는 시간"
+                                       Classes="body"
+                                       FontWeight="SemiBold" />
+
+                            <RadioButton GroupName="AppDetailLockScheduleGroup"
+                                         Content="항상"
+                                         IsChecked="{Binding IsAlwaysLock, Mode=TwoWay}"
+                                         AutomationProperties.Name="항상 잠금" />
+
+                            <RadioButton GroupName="AppDetailLockScheduleGroup"
+                                         Content="정해진 시간에만"
+                                         IsChecked="{Binding IsScheduledLock, Mode=TwoWay}"
+                                         AutomationProperties.Name="정해진 시간에만 잠금" />
+
+                            <StackPanel Margin="24,2,0,0"
+                                        Spacing="{StaticResource Space1}"
+                                        IsVisible="{Binding IsScheduledLock}">
+                                <Grid ColumnDefinitions="*,Auto,*"
+                                      ColumnSpacing="8">
+                                    <StackPanel Grid.Column="0"
+                                                Spacing="4">
+                                        <TextBlock Text="시작"
+                                                   Classes="caption" />
+                                        <TimePicker x:Name="LockStartTimePicker"
+                                                    Classes="CompactTimePicker"
+                                                    ClockIdentifier="24HourClock"
+                                                    MinuteIncrement="1"
+                                                    SelectedTime="{Binding LockStartTime, Mode=TwoWay}"
+                                                    AutomationProperties.Name="잠금 시작 시간" />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Column="1"
+                                               Text="~"
+                                               Classes="body"
+                                               Foreground="{DynamicResource InkMutedBrush}"
+                                               VerticalAlignment="Bottom"
+                                               Margin="0,0,0,8" />
+
+                                    <StackPanel Grid.Column="2"
+                                                Spacing="4">
+                                        <TextBlock Text="종료"
+                                                   Classes="caption" />
+                                        <TimePicker x:Name="LockEndTimePicker"
+                                                    Classes="CompactTimePicker"
+                                                    ClockIdentifier="24HourClock"
+                                                    MinuteIncrement="1"
+                                                    SelectedTime="{Binding LockEndTime, Mode=TwoWay}"
+                                                    AutomationProperties.Name="잠금 종료 시간" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Text="{Binding LockHoursError}"
+                                           Classes="field-error"
+                                           IsVisible="{Binding HasLockHoursError}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 하단 버튼 바: 목록에서 제거 / 저장 -->
+            <Border Grid.Row="2"
+                    BorderBrush="{DynamicResource DividerBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="20,14">
+                <Grid ColumnDefinitions="*,Auto,Auto"
+                      ColumnSpacing="8">
+                    <Button x:Name="RemoveButton"
+                            Grid.Column="1"
+                            Classes="Danger"
+                            Content="목록에서 제거"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Click="OnRemoveClick"
+                            AutomationProperties.Name="목록에서 제거" />
+
+                    <Button x:Name="SaveButton"
+                            Grid.Column="2"
+                            Classes="Primary"
+                            Content="저장"
+                            MinWidth="76"
+                            IsVisible="{Binding SupportsLaunchPolicy}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Click="OnSaveClick"
+                            AutomationProperties.Name="저장" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

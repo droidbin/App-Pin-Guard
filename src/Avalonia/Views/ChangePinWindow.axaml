@@ -1,0 +1,142 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:WindowsAppProtector.Controls"
+        x:Class="WindowsAppProtector.Views.ChangePinWindow"
+        Title="PIN 변경"
+        Width="440"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="{StaticResource AppFontFamily}"
+        KeyDown="OnWindowKeyDown">
+
+    <StackPanel Spacing="{StaticResource Space4}"
+                Margin="28,24,28,24">
+        <!-- 걸쇠 배지 아이콘 -->
+        <Border Classes="LatchBadge"
+                Width="56"
+                Height="56"
+                CornerRadius="12"
+                AutomationProperties.Name="보안 아이콘">
+            <Canvas Width="32"
+                    Height="32"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <Path Data="M 10.4,14.4 V 9.6 A 5.6,5.6 0 0 1 21.6,9.6 V 14.4"
+                      Stroke="{DynamicResource LatchBrush}"
+                      StrokeThickness="2.4"
+                      StrokeLineCap="Round" />
+                <Path Data="M 7.2,14.4 H 24.8 A 2.4,2.4 0 0 1 27.2,16.8 V 26.4 A 2.4,2.4 0 0 1 24.8,28.8 H 7.2 A 2.4,2.4 0 0 1 4.8,26.4 V 16.8 A 2.4,2.4 0 0 1 7.2,14.4 Z"
+                      Fill="{DynamicResource LatchBrush}" />
+                <Ellipse Width="3.6"
+                         Height="3.6"
+                         Canvas.Left="14.2"
+                         Canvas.Top="18.7"
+                         Fill="{DynamicResource LatchSubtleBrush}" />
+                <Rectangle Width="2"
+                           Height="3.8"
+                           RadiusX="1"
+                           RadiusY="1"
+                           Canvas.Left="15"
+                           Canvas.Top="21.2"
+                           Fill="{DynamicResource LatchSubtleBrush}" />
+            </Canvas>
+        </Border>
+
+        <!-- 1단계: 현재 PIN 확인 -->
+        <StackPanel x:Name="VerifyStepPanel"
+                    Spacing="{StaticResource Space4}">
+            <StackPanel Spacing="{StaticResource Space1}"
+                        HorizontalAlignment="Center">
+                <TextBlock Text="PIN 변경"
+                           Classes="section-title"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="현재 사용 중인 PIN을 입력하세요."
+                           Classes="body"
+                           Foreground="{DynamicResource InkMutedBrush}"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+
+            <controls:PinInput x:Name="CurrentPinInput"
+                               Margin="0,4,0,0" />
+
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="{StaticResource Space2}"
+                        Margin="0,8,0,0">
+                <Button Content="취소"
+                        MinWidth="84"
+                        IsCancel="True"
+                        Click="OnCancelClick"
+                        AutomationProperties.Name="PIN 변경 취소" />
+
+                <Button x:Name="VerifyNextButton"
+                        Classes="Primary"
+                        Content="다음"
+                        MinWidth="96"
+                        IsEnabled="False"
+                        Click="OnVerifyNextClick"
+                        AutomationProperties.Name="현재 PIN 확인" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- 2단계: 새 PIN 입력 및 확인 -->
+        <StackPanel x:Name="NewPinStepPanel"
+                    Spacing="{StaticResource Space4}"
+                    IsVisible="False">
+            <StackPanel Spacing="{StaticResource Space1}"
+                        HorizontalAlignment="Center">
+                <TextBlock Text="새 PIN 설정"
+                           Classes="section-title"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="4자리 이상 숫자로 새 PIN을 입력하세요."
+                           Classes="body"
+                           Foreground="{DynamicResource InkMutedBrush}"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="{StaticResource Space3}">
+                <StackPanel Spacing="{StaticResource Space1}">
+                    <TextBlock Text="새 PIN"
+                               Classes="caption"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource InkBrush}"
+                               HorizontalAlignment="Center" />
+                    <controls:PinInput x:Name="NewPinInput" />
+                </StackPanel>
+
+                <StackPanel Spacing="{StaticResource Space1}">
+                    <TextBlock Text="PIN 확인"
+                               Classes="caption"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource InkBrush}"
+                               HorizontalAlignment="Center" />
+                    <controls:PinInput x:Name="ConfirmPinInput" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="{StaticResource Space2}"
+                        Margin="0,8,0,0">
+                <Button x:Name="SaveCancelButton"
+                        Content="취소"
+                        MinWidth="84"
+                        IsCancel="True"
+                        Click="OnCancelClick"
+                        AutomationProperties.Name="PIN 변경 취소" />
+
+                <Button x:Name="SavePinButton"
+                        Classes="Primary"
+                        Content="PIN 변경"
+                        MinWidth="104"
+                        IsEnabled="False"
+                        Click="OnSavePinClick"
+                        AutomationProperties.Name="새 PIN 저장" />
+            </StackPanel>
+        </StackPanel>
+    </StackPanel>
+</Window>

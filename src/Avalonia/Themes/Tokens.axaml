@@ -1,0 +1,125 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 글꼴 -->
+    <FontFamily x:Key="AppFontFamily">avares://WindowsAppProtector.WinUI/Assets/Fonts/PretendardVariable.ttf#Pretendard Variable, Malgun Gothic</FontFamily>
+    <FontFamily x:Key="ContentControlThemeFontFamily">avares://WindowsAppProtector.WinUI/Assets/Fonts/PretendardVariable.ttf#Pretendard Variable, Malgun Gothic</FontFamily>
+
+    <!-- 글꼴 크기 / 줄간격 (5절) -->
+    <x:Double x:Key="FontSizePageTitle">28</x:Double>
+    <x:Double x:Key="LineHeightPageTitle">36</x:Double>
+    <x:Double x:Key="FontSizeSectionTitle">20</x:Double>
+    <x:Double x:Key="LineHeightSectionTitle">28</x:Double>
+    <x:Double x:Key="FontSizeAppName">15</x:Double>
+    <x:Double x:Key="LineHeightAppName">22</x:Double>
+    <x:Double x:Key="FontSizeBody">14</x:Double>
+    <x:Double x:Key="LineHeightBody">21</x:Double>
+    <x:Double x:Key="FontSizeCaption">12</x:Double>
+    <x:Double x:Key="LineHeightCaption">18</x:Double>
+    <x:Double x:Key="FontSizePinDigit">32</x:Double>
+    <x:Double x:Key="LineHeightPinDigit">40</x:Double>
+
+    <!-- 간격 (4 단위) -->
+    <x:Double x:Key="Space1">4</x:Double>
+    <x:Double x:Key="Space2">8</x:Double>
+    <x:Double x:Key="Space3">12</x:Double>
+    <x:Double x:Key="Space4">16</x:Double>
+    <x:Double x:Key="Space6">24</x:Double>
+    <x:Double x:Key="Space8">32</x:Double>
+    <x:Double x:Key="Space12">48</x:Double>
+
+    <!-- 창·목록 치수 -->
+    <x:Double x:Key="WindowHorizontalPadding">32</x:Double>
+    <x:Double x:Key="WindowCompactHorizontalPadding">16</x:Double>
+    <Thickness x:Key="WindowPadding">32,24</Thickness>
+    <Thickness x:Key="WindowCompactPadding">16,16</Thickness>
+    <Thickness x:Key="CardPadding">16</Thickness>
+    <Thickness x:Key="AppRowPadding">16,0</Thickness>
+    <x:Double x:Key="AppRowHeight">64</x:Double>
+    <x:Double x:Key="AppIconSize">32</x:Double>
+    <x:Double x:Key="AppIconContainerSize">40</x:Double>
+
+    <!-- 코너 (컨트롤 4, 목록 면·설정 카드 8, PIN 칸 8) -->
+    <CornerRadius x:Key="ControlCornerRadius">4</CornerRadius>
+    <CornerRadius x:Key="SurfaceCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="CardCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="PinSlotCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="ChipCornerRadius">4</CornerRadius>
+
+    <!-- 테마별 색 토큰 (Default=Light, Dark; 고대비는 런타임 시스템 색으로 대체) -->
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Default">
+            <!-- 5절 핵심 색 토큰 -->
+            <Color x:Key="InkColor">#1A2330</Color>
+            <Color x:Key="InkMutedColor">#5B6676</Color>
+            <Color x:Key="SurfaceColor">#FFFFFF</Color>
+            <Color x:Key="CanvasColor">#EEF1F5</Color>
+            <Color x:Key="LatchColor">#9A6414</Color>
+            <Color x:Key="LatchSubtleColor">#F6EBD7</Color>
+            <Color x:Key="DangerColor">#B3261E</Color>
+            <Color x:Key="DividerColor">#E1E5EB</Color>
+
+            <SolidColorBrush x:Key="InkBrush" Color="{StaticResource InkColor}" />
+            <SolidColorBrush x:Key="InkMutedBrush" Color="{StaticResource InkMutedColor}" />
+            <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+            <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource CanvasColor}" />
+            <SolidColorBrush x:Key="LatchBrush" Color="{StaticResource LatchColor}" />
+            <SolidColorBrush x:Key="LatchSubtleBrush" Color="{StaticResource LatchSubtleColor}" />
+            <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
+            <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
+
+            <!-- 파생 컨트롤 상태 색 토큰 -->
+            <SolidColorBrush x:Key="InkOnAccentBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="InkHoverBrush" Color="#2B3748" />
+            <SolidColorBrush x:Key="InkPressedBrush" Color="#111822" />
+            <SolidColorBrush x:Key="LatchOnFillBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="LatchHoverBrush" Color="#82530F" />
+            <SolidColorBrush x:Key="LatchPressedBrush" Color="#6C440C" />
+            <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#F5F7FA" />
+            <SolidColorBrush x:Key="SurfacePressedBrush" Color="#E9EEF4" />
+            <SolidColorBrush x:Key="ControlNeutralBrush" Color="#CBD2DC" />
+            <SolidColorBrush x:Key="ControlNeutralHoverBrush" Color="#B8C1CE" />
+            <SolidColorBrush x:Key="ControlNeutralPressedBrush" Color="#A6B1C2" />
+            <SolidColorBrush x:Key="ControlKnobOffBrush" Color="#5B6676" />
+            <SolidColorBrush x:Key="DangerSubtleBrush" Color="#FDECEC" />
+            <SolidColorBrush x:Key="TransparentBrush" Color="#00000000" />
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+            <!-- 5절 핵심 색 토큰 -->
+            <Color x:Key="InkColor">#E8ECF1</Color>
+            <Color x:Key="InkMutedColor">#9AA5B4</Color>
+            <Color x:Key="SurfaceColor">#232831</Color>
+            <Color x:Key="CanvasColor">#171B21</Color>
+            <Color x:Key="LatchColor">#E3AE52</Color>
+            <Color x:Key="LatchSubtleColor">#3A2F1C</Color>
+            <Color x:Key="DangerColor">#FF8A80</Color>
+            <Color x:Key="DividerColor">#2F3540</Color>
+
+            <SolidColorBrush x:Key="InkBrush" Color="{StaticResource InkColor}" />
+            <SolidColorBrush x:Key="InkMutedBrush" Color="{StaticResource InkMutedColor}" />
+            <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
+            <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource CanvasColor}" />
+            <SolidColorBrush x:Key="LatchBrush" Color="{StaticResource LatchColor}" />
+            <SolidColorBrush x:Key="LatchSubtleBrush" Color="{StaticResource LatchSubtleColor}" />
+            <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
+            <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
+
+            <!-- 파생 컨트롤 상태 색 토큰 -->
+            <SolidColorBrush x:Key="InkOnAccentBrush" Color="#171B21" />
+            <SolidColorBrush x:Key="InkHoverBrush" Color="#D6DDE6" />
+            <SolidColorBrush x:Key="InkPressedBrush" Color="#C2CCD8" />
+            <SolidColorBrush x:Key="LatchOnFillBrush" Color="#171B21" />
+            <SolidColorBrush x:Key="LatchHoverBrush" Color="#ECC070" />
+            <SolidColorBrush x:Key="LatchPressedBrush" Color="#D19B3D" />
+            <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#2B313C" />
+            <SolidColorBrush x:Key="SurfacePressedBrush" Color="#333A47" />
+            <SolidColorBrush x:Key="ControlNeutralBrush" Color="#464E5C" />
+            <SolidColorBrush x:Key="ControlNeutralHoverBrush" Color="#566070" />
+            <SolidColorBrush x:Key="ControlNeutralPressedBrush" Color="#657082" />
+            <SolidColorBrush x:Key="ControlKnobOffBrush" Color="#C4CDD8" />
+            <SolidColorBrush x:Key="DangerSubtleBrush" Color="#3D1E1D" />
+            <SolidColorBrush x:Key="TransparentBrush" Color="#00000000" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

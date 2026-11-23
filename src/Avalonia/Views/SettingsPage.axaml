@@ -1,0 +1,199 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:WindowsAppProtector.Controls"
+             xmlns:vm="using:WindowsAppProtector.ViewModels"
+             x:Class="WindowsAppProtector.Views.SettingsPage"
+             x:DataType="vm:SettingsViewModel">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- 페이지 제목 -->
+        <StackPanel Grid.Row="0"
+                    Spacing="{StaticResource Space1}"
+                    Margin="0,0,0,16">
+            <TextBlock Text="설정"
+                       Classes="page-title" />
+            <TextBlock Text="변경한 설정은 즉시 저장되고 적용됩니다."
+                       Classes="caption" />
+        </StackPanel>
+
+        <!-- 설정 카드 그룹 -->
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="{StaticResource Space6}"
+                        MaxWidth="820"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,0,0,24">
+
+                <!-- 1. 보안 -->
+                <StackPanel Spacing="{StaticResource Space2}">
+                    <TextBlock Text="보안"
+                               Classes="section-title" />
+
+                    <controls:SettingsCard Header="PIN 변경"
+                                           Description="관리 화면을 열거나 잠긴 앱을 실행할 때 사용하는 기본 PIN을 변경합니다."
+                                           CardMessage="{Binding PinMessage}"
+                                           IsCardMessageError="{Binding IsPinError}">
+                        <controls:SettingsCard.ActionContent>
+                            <Button x:Name="ChangePinButton"
+                                    Content="PIN 변경"
+                                    MinWidth="104"
+                                    Click="OnChangePinClick"
+                                    AutomationProperties.Name="PIN 변경" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard Header="자리를 비우면 자동 잠금"
+                                           Description="지정한 시간 동안 입력이 없으면 보호 중인 앱을 자동으로 다시 잠급니다."
+                                           CardMessage="{Binding IdleLockError}"
+                                           IsCardMessageError="True">
+                        <controls:SettingsCard.ActionContent>
+                            <ComboBox ItemsSource="{Binding IdleLockOptions}"
+                                      SelectedItem="{Binding SelectedIdleLockOption, Mode=TwoWay}"
+                                      MinWidth="148"
+                                      AutomationProperties.Name="자리를 비우면 자동 잠금 시간">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:IdleLockOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard Header="Win32 일반 앱 실행 시 PIN 묻기"
+                                           TagText="실험 기능"
+                                           Description="잠긴 일반 실행 파일(Win32)을 열 때 바로 차단하는 대신 PIN 입력 창을 띄워 허용합니다."
+                                           CardMessage="{Binding LaunchGateError}"
+                                           IsCardMessageError="True">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch Classes="SettingToggleSwitch"
+                                          IsChecked="{Binding EnableLaunchGate, Mode=TwoWay}"
+                                          AutomationProperties.Name="Win32 일반 앱 실행 시 PIN 묻기" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+                </StackPanel>
+
+                <!-- 2. 일반 -->
+                <StackPanel Spacing="{StaticResource Space2}">
+                    <TextBlock Text="일반"
+                               Classes="section-title" />
+
+                    <controls:SettingsCard Header="Windows 시작 시 자동 실행"
+                                           Description="Windows에 로그인하면 트레이에서 자동으로 보호를 시작합니다."
+                                           CardMessage="{Binding StartWithWindowsError}"
+                                           IsCardMessageError="True">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch Classes="SettingToggleSwitch"
+                                          IsChecked="{Binding StartWithWindows, Mode=TwoWay}"
+                                          AutomationProperties.Name="Windows 시작 시 자동 실행" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard Header="창을 닫으면 트레이로 숨기기"
+                                           Description="창 닫기 버튼을 눌러도 앱을 종료하지 않고 시스템 트레이에서 보호를 유지합니다."
+                                           CardMessage="{Binding CloseToBackgroundError}"
+                                           IsCardMessageError="True">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch Classes="SettingToggleSwitch"
+                                          IsChecked="{Binding CloseToBackground, Mode=TwoWay}"
+                                          AutomationProperties.Name="창을 닫으면 트레이로 숨기기" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+                </StackPanel>
+
+                <!-- 3. 단축키 -->
+                <StackPanel Spacing="{StaticResource Space2}">
+                    <StackPanel Spacing="{StaticResource Space1}">
+                        <TextBlock Text="단축키"
+                                   Classes="section-title" />
+                        <TextBlock Text="{Binding HotkeySummaryMessage}"
+                                   Classes="caption"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <ItemsControl ItemsSource="{Binding Hotkeys}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Spacing="{StaticResource Space2}" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:HotkeySettingViewModel">
+                                <controls:SettingsCard Header="{Binding DisplayName}"
+                                                       Description="{Binding Description}"
+                                                       CardMessage="{Binding ValidationMessage}"
+                                                       IsCardMessageError="True">
+                                    <controls:SettingsCard.ActionContent>
+                                        <TextBox Classes="HotkeyBox"
+                                                 Text="{Binding HotkeyText, Mode=OneWay}"
+                                                 IsReadOnly="True"
+                                                 Watermark="키 입력"
+                                                 Tag="{Binding ActionKey}"
+                                                 ToolTip.Tip="클릭한 뒤 사용할 키 조합을 누르세요."
+                                                 AutomationProperties.Name="{Binding DisplayName}" />
+                                    </controls:SettingsCard.ActionContent>
+                                </controls:SettingsCard>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- 4. 업데이트·정보 -->
+                <StackPanel Spacing="{StaticResource Space2}">
+                    <TextBlock Text="업데이트·정보"
+                               Classes="section-title" />
+
+                    <controls:SettingsCard Header="업데이트 채널"
+                                           Description="정식은 검증된 릴리스만 받고, 베타는 사전 릴리스까지 먼저 받습니다."
+                                           CardMessage="{Binding UpdateChannelError}"
+                                           IsCardMessageError="True">
+                        <controls:SettingsCard.ActionContent>
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="{StaticResource Space4}"
+                                        VerticalAlignment="Center">
+                                <RadioButton GroupName="SettingsUpdateChannelGroup"
+                                             Content="정식"
+                                             IsChecked="{Binding IsStableChannel, Mode=TwoWay}"
+                                             AutomationProperties.Name="정식 채널" />
+                                <RadioButton GroupName="SettingsUpdateChannelGroup"
+                                             Content="베타"
+                                             IsChecked="{Binding IsBetaChannel, Mode=TwoWay}"
+                                             AutomationProperties.Name="베타 채널" />
+                            </StackPanel>
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard Header="현재 버전 및 업데이트"
+                                           Description="{Binding CurrentVersionDisplay}"
+                                           CardMessage="{Binding UpdateStatusMessage}"
+                                           IsCardMessageError="{Binding IsUpdateStatusError}">
+                        <controls:SettingsCard.ActionContent>
+                            <Button Content="{Binding CheckUpdateButtonText}"
+                                    MinWidth="116"
+                                    IsEnabled="{Binding CanCheckForUpdates}"
+                                    Click="OnCheckForUpdatesClick"
+                                    AutomationProperties.Name="업데이트 확인" />
+                        </controls:SettingsCard.ActionContent>
+
+                        <controls:SettingsCard.FooterContent>
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Right"
+                                        Margin="0,10,0,0"
+                                        IsVisible="{Binding HasAvailableUpdate}">
+                                <Button Classes="Primary"
+                                        Content="{Binding InstallUpdateButtonText}"
+                                        MinWidth="104"
+                                        IsEnabled="{Binding CanInstallUpdate}"
+                                        Click="OnInstallUpdateClick"
+                                        AutomationProperties.Name="새 업데이트 지금 설치" />
+                            </StackPanel>
+                        </controls:SettingsCard.FooterContent>
+                    </controls:SettingsCard>
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
