@@ -37,6 +37,8 @@ public sealed class MainWindow : Window
     private const int PowerSuspend = 0x4;
     private const int PowerResumeAutomatic = 0x12;
     private const uint CursorShowing = 0x00000001;
+    private const uint SpiGetMouseVanish = 0x1020;
+    private const uint SpiSetMouseVanish = 0x1021;
     private const uint InputMouse = 0;
     private const uint MouseEventfMove = 0x0001;
     private const uint EventSystemForeground = 0x0003;
@@ -745,10 +747,7 @@ public sealed class MainWindow : Window
         if ((message == WmWtsSessionChange && wParam.ToInt64() == WtsSessionUnlock) ||
             (message == WmPowerBroadcast && wParam.ToInt64() == PowerResumeAutomatic))
         {
-            var before = GetCursorVisibilityForLog();
-            EnsureCursorVisible();
-            var after = GetCursorVisibilityForLog();
-            App.WriteProtectionLog($"{(message == WmWtsSessionChange ? "session-unlock" : "power-resume")} cursor={before}->{after}");
+            RestoreCursorAfterUnlock(message == WmWtsSessionChange ? "session-unlock" : "power-resume");
         }
 
         if ((message == WmWtsSessionChange && wParam.ToInt64() is WtsConsoleDisconnect or WtsRemoteDisconnect or WtsSessionLock) ||
@@ -804,20 +803,62 @@ public sealed class MainWindow : Window
 
         SetCursor(LoadCursor(IntPtr.Zero, IdcArrow));
 
-        var inputs = new Input[]
+        // "Hide pointer while typing" (mouse vanish) stays latched after a PIN is typed; toggling it
+        // with fWinIni=0 resets the vanished state without touching the persisted setting.
+        bool vanishEnabled = false;
+        if (SystemParametersInfo(SpiGetMouseVanish, 0, ref vanishEnabled, 0) && vanishEnabled)
         {
-            new()
-            {
-                type = InputMouse,
-                mi = new MouseInput { dx = 1, dy = 0, dwFlags = MouseEventfMove },
-            },
-            new()
-            {
-                type = InputMouse,
-                mi = new MouseInput { dx = -1, dy = 0, dwFlags = MouseEventfMove },
-            },
+            try { SystemParametersInfo(SpiSetMouseVanish, 0, IntPtr.Zero, 0); }
+            finally { SystemParametersInfo(SpiSetMouseVanish, 0, new IntPtr(1), 0); }
+        }
+
+        // Two separate injections: a single {+1,-1} batch nets to zero movement and may not wake the pointer.
+        var nudgeRight = new Input[] { new() { type = InputMouse, mi = new MouseInput { dx = 2, dy = 0, dwFlags = MouseEventfMove } } };
+        var nudgeLeft = new Input[] { new() { type = InputMouse, mi = new MouseInput { dx = -2, dy = 0, dwFlags = MouseEventfMove } } };
+        if (SendInput(1, nudgeRight, Marshal.SizeOf<Input>()) == 1)
+        {
+            Thread.Sleep(15);
+            SendInput(1, nudgeLeft, Marshal.SizeOf<Input>());
+        }
+        else if (GetCursorPos(out var position))
+        {
+            SetCursorPos(position.X + 1, position.Y);
+            Thread.Sleep(15);
+            SetCursorPos(position.X, position.Y);
+        }
+    }
+
+    /// <summary>Restores the pointer now and again shortly after, once dialog teardown has settled.</summary>
+    private void RestoreCursorAfterUnlock(string reason)
+    {
+        void RestoreAndLog(string stage)
+        {
+            var before = DescribeCursorForLog();
+            EnsureCursorVisible();
+            App.WriteProtectionLog($"{reason}/{stage} cursor {before} -> {DescribeCursorForLog()}");
+        }
+
+        RestoreAndLog("now");
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250);
+            DispatcherQueue.TryEnqueue(() => RestoreAndLog("+250ms"));
+            await Task.Delay(750);
+            DispatcherQueue.TryEnqueue(() => RestoreAndLog("+1000ms"));
+        });
+    }
+
+    private static string DescribeCursorForLog()
+    {
+        var cursorInfo = new CursorInfo
+        {
+            cbSize = (uint)Marshal.SizeOf<CursorInfo>(),
         };
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>());
+        bool vanishEnabled = false;
+        SystemParametersInfo(SpiGetMouseVanish, 0, ref vanishEnabled, 0);
+        return GetCursorInfo(ref cursorInfo)
+            ? $"flags=0x{cursorInfo.flags:X} hCursor=0x{cursorInfo.hCursor.ToInt64():X} vanish={vanishEnabled} fg=0x{GetForegroundWindow().ToInt64():X}"
+            : "unknown";
     }
 
     private static bool IsCursorHidden()
@@ -827,17 +868,6 @@ public sealed class MainWindow : Window
             cbSize = (uint)Marshal.SizeOf<CursorInfo>(),
         };
         return GetCursorInfo(ref cursorInfo) && (cursorInfo.flags & CursorShowing) == 0;
-    }
-
-    private static string GetCursorVisibilityForLog()
-    {
-        var cursorInfo = new CursorInfo
-        {
-            cbSize = (uint)Marshal.SizeOf<CursorInfo>(),
-        };
-        return GetCursorInfo(ref cursorInfo)
-            ? (cursorInfo.flags & CursorShowing) != 0 ? "visible" : "hidden"
-            : "unknown";
     }
 
     private async Task RelockForSystemEventAsync()
@@ -1359,6 +1389,11 @@ public sealed class MainWindow : Window
                 : await ShowCreatePinDialogAsync();
             authenticated &= generation == authenticationGeneration;
             SetSessionUnlocked(authenticated);
+            if (authenticated)
+            {
+                RestoreCursorAfterUnlock("pin-unlock");
+            }
+
             if (authenticated && !hasCheckedUpdatesAfterUnlock)
             {
                 hasCheckedUpdatesAfterUnlock = true;
@@ -2365,6 +2400,15 @@ public sealed class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out ScreenPoint point);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint action, uint param, ref bool value, uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SystemParametersInfo(uint action, uint param, IntPtr value, uint flags);
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorInfo(ref CursorInfo cursorInfo);

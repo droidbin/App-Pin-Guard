@@ -35,6 +35,7 @@ internal static class Gate
             }
 
             var child = Launch(path, args.Skip(2).ToArray());
+            EnsureCursorVisible();
             try { Exchange(GateProtocol.Track, path, child.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
             catch (IOException) { }
             catch (TimeoutException) { }
@@ -97,20 +98,33 @@ internal static class Gate
 
         SetCursor(LoadCursor(IntPtr.Zero, IdcArrow));
 
-        var inputs = new Input[]
+        // Reset the latched "hide pointer while typing" state (fWinIni=0: persisted setting untouched).
+        bool vanishEnabled = false;
+        if (SystemParametersInfo(SpiGetMouseVanish, 0, ref vanishEnabled, 0) && vanishEnabled)
         {
-            new Input
+            try { SystemParametersInfo(SpiSetMouseVanish, 0, IntPtr.Zero, 0); }
+            finally { SystemParametersInfo(SpiSetMouseVanish, 0, new IntPtr(1), 0); }
+        }
+
+        // Two separate injections: one {+1,-1} batch nets to zero movement and may not wake the pointer.
+        var right = new Input[] { new Input { Type = InputMouse, Mi = new MouseInput { Dx = 2, Dy = 0, Flags = MouseEventfMove } } };
+        var left = new Input[] { new Input { Type = InputMouse, Mi = new MouseInput { Dx = -2, Dy = 0, Flags = MouseEventfMove } } };
+        int size = Marshal.SizeOf(typeof(Input));
+        if (SendInput(1, right, size) == 1)
+        {
+            System.Threading.Thread.Sleep(15);
+            SendInput(1, left, size);
+        }
+        else
+        {
+            ScreenPoint point;
+            if (GetCursorPos(out point))
             {
-                Type = InputMouse,
-                Mi = new MouseInput { Dx = 1, Dy = 0, Flags = MouseEventfMove },
-            },
-            new Input
-            {
-                Type = InputMouse,
-                Mi = new MouseInput { Dx = -1, Dy = 0, Flags = MouseEventfMove },
-            },
-        };
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input)));
+                SetCursorPos(point.X + 1, point.Y);
+                System.Threading.Thread.Sleep(15);
+                SetCursorPos(point.X, point.Y);
+            }
+        }
     }
 
     private static bool IsCursorHidden()
@@ -209,6 +223,8 @@ internal static class Gate
     private static extern bool TerminateProcess(IntPtr process, uint code);
 
     private const uint CursorShowing = 0x00000001;
+    private const uint SpiGetMouseVanish = 0x1020;
+    private const uint SpiSetMouseVanish = 0x1021;
     private const uint InputMouse = 0;
     private const uint MouseEventfMove = 0x0001;
     private static readonly IntPtr IdcArrow = new IntPtr(32512);
@@ -249,6 +265,18 @@ internal static class Gate
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorInfo(ref CursorInfo cursorInfo);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out ScreenPoint point);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern bool SystemParametersInfo(uint action, uint param, ref bool value, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool SystemParametersInfo(uint action, uint param, IntPtr value, uint flags);
 
     [DllImport("user32.dll")]
     private static extern int ShowCursor(bool show);
