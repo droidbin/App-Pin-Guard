@@ -2,7 +2,7 @@
 
 WinUI 3 기반 Windows 앱 실행 차단 도구입니다. 보호 목록에 등록한 `.exe` 파일을 Windows IFEO(Image File Execution Options) 규칙 또는 창 감시 방식으로 차단합니다.
 
-공개 안정판은 기존 이름인 Windows App Protector `1.3.0`입니다. 2.0 개발 빌드부터 App PIN Guard 이름을 사용합니다.
+제품명은 **App PIN Guard**입니다. 공개 안정판 `1.3.0`까지는 이전 이름인 Windows App Protector로 배포되었으며, 2.0 개발 빌드부터 App PIN Guard 이름을 사용합니다.
 
 ## 배포 파일
 
@@ -117,6 +117,8 @@ Windows 시작 시 자동 실행은 관리자 권한 앱이 로그인 후 안정
 
 ## 제거
 
-Windows 설정의 앱 제거 목록에서 `App PIN Guard`를 제거하거나 설치 폴더의 `uninstall.bat`을 실행하면 됩니다. 1.x에서는 기존 이름인 `Windows App Protector`로 표시됩니다.
+Windows 설정의 앱 목록에서 제거하거나 설치 폴더의 `uninstall.bat`을 실행하면 됩니다.
+
+내부 실행 파일·서비스 이름(`WindowsAppProtector.*`, `WindowsAppProtectorService`)과 `%PROGRAMDATA%\Windows App Protector` 경로는 현재 코드의 식별자이므로 제품명 변경과 무관하게 그대로 유지합니다.
 
 제거 시 Windows Service, 시작 예약 작업, 관리형 IFEO 규칙, 서비스 설정, 바로가기가 함께 정리됩니다.
