@@ -11,8 +11,8 @@ using System.Threading;
 internal static class GateSpool
 {
     internal const string Magic = "WAP-GATE 1";
+    // authorize: a launch-mode app named by its path. unlock: a locked app named by its AppId (window-mode apps).
     internal const string OpAuthorize = "authorize";
-    internal const string OpTrack = "track";
     internal const string OpUnlock = "unlock";
     internal const string ResultApproved = "approved";
     internal const string ResultDenied = "denied";
@@ -128,13 +128,16 @@ internal static class GateSpool
 internal sealed class GateRequest
 {
     private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
+    internal const int MaxGroupApps = 32;
 
     internal string Op = GateSpool.OpAuthorize;
     internal string Nonce = GateSpool.NewNonce();
     internal int Pid;
     internal string Path = string.Empty;
     internal string Pin = string.Empty;
-    internal int Child;
+    internal string AppId = string.Empty;
+    // Other relocked apps the user opened with the same PIN (grouped prompt). Only meaningful for unlock.
+    internal readonly List<string> GroupIds = new List<string>();
 
     internal string Serialize()
     {
@@ -145,7 +148,11 @@ internal sealed class GateRequest
         text.Append("pid=").Append(Pid.ToString(CultureInfo.InvariantCulture)).Append('\n');
         text.Append("path=").Append(GateSpool.EncodeText(Path)).Append('\n');
         text.Append("pin=").Append(GateSpool.EncodeText(Pin)).Append('\n');
-        if (Op == GateSpool.OpTrack || Op == GateSpool.OpUnlock) text.Append("child=").Append(Child.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        if (Op == GateSpool.OpUnlock)
+        {
+            text.Append("app=").Append(AppId).Append('\n');
+            if (GroupIds.Count > 0) text.Append("group=").Append(string.Join(",", GroupIds.ToArray())).Append('\n');
+        }
         return text.ToString();
     }
 
@@ -157,21 +164,31 @@ internal sealed class GateRequest
             bool validMagic;
             Dictionary<string, string> fields = GateSpool.ParseFields(text, out validMagic);
             if (!validMagic) return null;
-            string op, nonce, pid, path, pin, child;
+            string op, nonce, pid, path, pin, app;
             if (!fields.TryGetValue("op", out op) || !fields.TryGetValue("nonce", out nonce) ||
                 !fields.TryGetValue("pid", out pid) || !fields.TryGetValue("path", out path)) return null;
-            if (op != GateSpool.OpAuthorize && op != GateSpool.OpTrack && op != GateSpool.OpUnlock) return null;
+            if (op != GateSpool.OpAuthorize && op != GateSpool.OpUnlock) return null;
             if (!GateSpool.IsValidNonce(nonce)) return null;
             var request = new GateRequest { Op = op, Nonce = nonce };
             if (!int.TryParse(pid, NumberStyles.None, CultureInfo.InvariantCulture, out request.Pid) || request.Pid <= 0)
                 return null;
             request.Path = GateSpool.DecodeText(path);
             if (fields.TryGetValue("pin", out pin)) request.Pin = GateSpool.DecodeText(pin);
-            if (op == GateSpool.OpTrack || op == GateSpool.OpUnlock)
+            if (op == GateSpool.OpUnlock)
             {
-                if (!fields.TryGetValue("child", out child) ||
-                    !int.TryParse(child, NumberStyles.None, CultureInfo.InvariantCulture, out request.Child) ||
-                    request.Child <= 0) return null;
+                Guid parsed;
+                if (!fields.TryGetValue("app", out app) || !Guid.TryParse(app, out parsed)) return null;
+                request.AppId = app;
+                string group;
+                if (fields.TryGetValue("group", out group) && group.Length > 0)
+                {
+                    foreach (string id in group.Split(','))
+                    {
+                        if (!Guid.TryParse(id, out parsed)) return null;
+                        if (request.GroupIds.Count >= MaxGroupApps) return null;
+                        request.GroupIds.Add(id);
+                    }
+                }
             }
             return request;
         }
@@ -185,6 +202,8 @@ internal sealed class GateResponse
     internal string Nonce = string.Empty;
     internal string Result = GateSpool.ResultDenied;
     internal int RetryAfterSeconds;
+    // The app the request resolved to; lets Gate name its single PIN prompt per app.
+    internal string AppId = string.Empty;
 
     internal static GateResponse Unavailable(string nonce)
     {
@@ -197,6 +216,7 @@ internal sealed class GateResponse
         text.Append(GateSpool.Magic).Append('\n');
         text.Append("nonce=").Append(Nonce).Append('\n');
         text.Append("result=").Append(Result).Append('\n');
+        if (!string.IsNullOrEmpty(AppId)) text.Append("app=").Append(AppId).Append('\n');
         if (Result == GateSpool.ResultRateLimited)
             text.Append("retryAfter=").Append(RetryAfterSeconds.ToString(CultureInfo.InvariantCulture)).Append('\n');
         return text.ToString();
@@ -207,9 +227,11 @@ internal sealed class GateResponse
         bool validMagic;
         Dictionary<string, string> fields = GateSpool.ParseFields(text, out validMagic);
         if (!validMagic) return null;
-        string nonce, result, retry;
+        string nonce, result, retry, app;
         if (!fields.TryGetValue("nonce", out nonce) || !fields.TryGetValue("result", out result)) return null;
         var response = new GateResponse { Nonce = nonce, Result = result };
+        Guid parsedApp;
+        if (fields.TryGetValue("app", out app) && Guid.TryParse(app, out parsedApp)) response.AppId = app;
         if (fields.TryGetValue("retryAfter", out retry))
             int.TryParse(retry, NumberStyles.None, CultureInfo.InvariantCulture, out response.RetryAfterSeconds);
         return response;

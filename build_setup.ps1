@@ -70,8 +70,8 @@ function Get-SharedSources([string[]]$names) { $names | ForEach-Object { Join-Pa
 $productBrandSource = Join-Path $root "src\Shared\ProductBrand.cs"
 $serviceSources = @(Get-ChildItem -LiteralPath (Join-Path $root "src\Service") -Filter *.cs | ForEach-Object { $_.FullName }) +
     (Get-SharedSources @("ProductBrand", "WapPaths", "WapLog", "PolicyModel", "PolicyStore", "PolicyRules", "PinHash", "GateSpool", "StatusModel", "EnforcementFile", "LegacyMigration", "WapSecurity"))
-$gateShared = Get-SharedSources @("ProductBrand", "WapPaths", "WapLog", "GateSpool", "WapSecurity")
-$agentShared = Get-SharedSources @("WapPaths", "WapLog", "WapSecurity", "EnforcementFile")
+$gateShared = Get-SharedSources @("ProductBrand", "WapPaths", "WapLog", "GateSpool", "WapSecurity", "EnforcementFile", "WindowResolver")
+$agentShared = Get-SharedSources @("WapPaths", "WapLog", "WapSecurity", "EnforcementFile", "WindowResolver")
 $setupShared = Get-SharedSources @("ProductBrand", "WapPaths")
 $agentSource = Join-Path $root "src\WindowAgent\Program.cs"
 $gateSource = Join-Path $root "src\LaunchGate\Program.cs"

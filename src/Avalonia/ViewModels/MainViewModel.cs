@@ -5,6 +5,7 @@ using System.Runtime.Serialization.Json;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WindowsAppProtector.Models;
+using WindowsAppProtector.Platform;
 using WindowsAppProtector.Services;
 
 namespace WindowsAppProtector.ViewModels;
@@ -776,6 +777,21 @@ public class MainViewModel : ObservableObject
                 ? $"앱 {policy.Apps.Count}개를 모두 잠갔습니다."
                 : $"앱 {policy.Apps.Count}개를 모두 열었습니다.",
             NotificationSeverity.Success);
+        if (!enabled) _ = FocusRestoredWindowAsync(policy.Apps.ToList());
+    }
+
+    // The agent restores the windows without activating one; activating the front-most one here brings the pointer back.
+    private static async Task FocusRestoredWindowAsync(IReadOnlyCollection<AppPolicy> apps)
+    {
+        try
+        {
+            var activated = await ForegroundActivator.ActivateFirstWindowOfAsync(apps);
+            CursorRecovery.RestoreAfterUnlock(activated ? "unlock-all/focused" : "unlock-all/no-window");
+        }
+        catch (Exception ex)
+        {
+            App.WriteCrashLog(ex);
+        }
     }
 
     public async Task<bool> SavePreferencesAsync(bool closeToBackground, bool closeAppsOnLock,
@@ -1144,6 +1160,7 @@ public class MainViewModel : ObservableObject
         {
             var reported = serviceStatus?.Apps.FirstOrDefault(app => app.Id == item.AppId);
             item.Rule = reported?.Rule ?? string.Empty;
+            item.UnlockedSessions = reported?.UnlockedSessions ?? 0;
         }
     }
 
@@ -1192,6 +1209,7 @@ public class MainViewModel : ObservableObject
         foreach (var app in apps)
         {
             var identity = GetAppIdentity(app);
+            var reported = serviceStatus?.Apps.FirstOrDefault(r => r.Id == app.Id);
             var item = new ProtectedAppViewModel
             {
                 AppId = app.Id,
@@ -1199,6 +1217,7 @@ public class MainViewModel : ObservableObject
                 Identity = identity,
                 Path = GetDisplayPath(app),
                 IsLocked = app.Locked,
+                UnlockedSessions = reported?.UnlockedSessions ?? 0,
                 PolicySummary = BuildPolicySummary(app),
                 IsPackaged = app.IsPackaged,
                 PackageFamilyName = app.PackageFamilyName,
@@ -1206,7 +1225,7 @@ public class MainViewModel : ObservableObject
                 CanConfigureLaunchPolicy = !app.IsPackaged && !PolicyRules.IsWindowMode(app),
                 IsSelected = previousSelectedIdentities.Contains(identity),
                 Icon = previousIcons.TryGetValue(identity, out var cachedIcon) ? cachedIcon : null,
-                Rule = serviceStatus?.Apps.FirstOrDefault(reported => reported.Id == app.Id)?.Rule ?? string.Empty,
+                Rule = reported?.Rule ?? string.Empty,
             };
 
             Apps.Add(item);

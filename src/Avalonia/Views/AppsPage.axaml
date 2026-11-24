@@ -252,6 +252,7 @@
                                         <ToggleSwitch Grid.Column="4"
                                                       Classes="LatchToggleSwitch"
                                                       IsChecked="{Binding IsLocked, Mode=OneWay}"
+                                                      OnContent="{Binding LockOnContent}"
                                                       Click="OnAppToggleClick"
                                                       VerticalAlignment="Center"
                                                       AutomationProperties.Name="{Binding AutomationName}" />

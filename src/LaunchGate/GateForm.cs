@@ -32,11 +32,32 @@ internal sealed class GateForm : Form
     private readonly GateButton _cancelButton;
     private readonly GateButton _openButton;
     private bool _usesDwmRoundedCorners;
+    private bool _submitting;
+    private bool _allowClose;
 
-    internal GateForm(string appPath)
+    internal Action<GateForm> SubmitHandler;
+
+    private const int GroupRowHeight = 22;
+    private const int GroupMaxRows = 6;
+    private readonly System.Collections.Generic.List<string> _groupNames = new System.Collections.Generic.List<string>();
+    private readonly int _groupExtra;
+
+    internal GateForm(string appPath) : this(appPath, null)
+    {
+    }
+
+    // groupNames: the apps one PIN will open together (two or more); null or fewer shows the plain single-app prompt.
+    internal GateForm(string appPath, System.Collections.Generic.IList<string> groupNames)
     {
         _theme = GateTheme.Current();
         _appName = ResolveAppName(appPath);
+        if (groupNames != null && groupNames.Count > 1)
+        {
+            _groupNames.AddRange(groupNames);
+            int rows = Math.Min(_groupNames.Count, GroupMaxRows) + (_groupNames.Count > GroupMaxRows ? 1 : 0);
+            _groupExtra = rows * GroupRowHeight + 12;
+            _appName = _groupNames.Count + "개 앱 잠금 해제";
+        }
         _appIcon = LoadAppIcon(appPath, out _ownsAppIcon);
         LoadCustomFont();
 
@@ -53,28 +74,28 @@ internal sealed class GateForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         AutoScaleMode = AutoScaleMode.None;
-        ClientSize = new Size(FormWidth, FormHeight);
+        ClientSize = new Size(FormWidth, FormHeight + _groupExtra);
         BackColor = _theme.Canvas;
         ForeColor = _theme.Ink;
         DoubleBuffered = true;
         KeyPreview = true;
 
         _pinPanel = new PinInputPanel(_theme, _pinInputFont, CornerRadius);
-        _pinPanel.Bounds = new Rectangle(28, 104, 384, 48);
+        _pinPanel.Bounds = new Rectangle(28, 104 + _groupExtra, 384, 48);
         _pinPanel.TabIndex = 0;
 
         _cancelButton = new GateButton(_theme, _buttonFont, isPrimary: false, cornerRadius: ControlCornerRadius);
         _cancelButton.Text = "취소";
         _cancelButton.AccessibleName = "취소";
         _cancelButton.DialogResult = DialogResult.Cancel;
-        _cancelButton.Bounds = new Rectangle(208, 192, 96, 40);
+        _cancelButton.Bounds = new Rectangle(208, 192 + _groupExtra, 96, 40);
         _cancelButton.TabIndex = 2;
 
         _openButton = new GateButton(_theme, _buttonFont, isPrimary: true, cornerRadius: ControlCornerRadius);
         _openButton.Text = "열기";
         _openButton.AccessibleName = "열기";
-        _openButton.DialogResult = DialogResult.OK;
-        _openButton.Bounds = new Rectangle(316, 192, 96, 40);
+        _openButton.Click += OnOpenButtonClick;
+        _openButton.Bounds = new Rectangle(316, 192 + _groupExtra, 96, 40);
         _openButton.TabIndex = 1;
 
         Controls.Add(_pinPanel);
@@ -89,6 +110,43 @@ internal sealed class GateForm : Form
     internal string PinText
     {
         get { return _pinPanel.PinTextBox.Text; }
+    }
+
+    internal void SetSubmitting(bool submitting)
+    {
+        _submitting = submitting;
+        _pinPanel.Enabled = !submitting;
+        _openButton.Enabled = !submitting;
+        _cancelButton.Enabled = !submitting;
+        UseWaitCursor = submitting;
+    }
+
+    internal void Finish(DialogResult result)
+    {
+        _allowClose = true;
+        DialogResult = result;
+        Close();
+    }
+
+    private void OnOpenButtonClick(object sender, EventArgs e)
+    {
+        if (_submitting) return;
+        if (SubmitHandler != null)
+        {
+            SubmitHandler(this);
+            return;
+        }
+        Finish(DialogResult.OK);
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (_submitting && !_allowClose && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            return;
+        }
+        base.OnFormClosing(e);
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -161,7 +219,21 @@ internal sealed class GateForm : Form
             titleFormat.Trimming = StringTrimming.EllipsisCharacter;
             titleFormat.LineAlignment = StringAlignment.Center;
             g.DrawString(_appName, _titleFont, titleBrush, textArea, titleFormat);
-            g.DrawString("잠긴 앱입니다", _subtitleFont, subtitleBrush, subtitleArea, titleFormat);
+            g.DrawString(_groupNames.Count > 1 ? "PIN 한 번으로 아래 앱을 모두 엽니다" : "잠긴 앱입니다",
+                _subtitleFont, subtitleBrush, subtitleArea, titleFormat);
+
+            // The apps this PIN opens together.
+            int shown = Math.Min(_groupNames.Count, GroupMaxRows);
+            for (int i = 0; i < shown; i++)
+            {
+                var row = new RectangleF(40f, 92f + i * GroupRowHeight, 372f, GroupRowHeight);
+                g.DrawString("•  " + _groupNames[i], _subtitleFont, titleBrush, row, titleFormat);
+            }
+            if (_groupNames.Count > shown)
+            {
+                var row = new RectangleF(40f, 92f + shown * GroupRowHeight, 372f, GroupRowHeight);
+                g.DrawString("외 " + (_groupNames.Count - shown) + "개", _subtitleFont, subtitleBrush, row, titleFormat);
+            }
         }
     }
 

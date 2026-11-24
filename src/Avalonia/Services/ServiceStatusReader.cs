@@ -39,7 +39,10 @@ internal sealed class ServiceStatusReader : IDisposable
     public void Poll()
     {
         var status = ReadOnce();
-        var snapshot = status is null ? string.Empty : status.UpdatedAtUtc + "|" + status.AppliedRevision;
+        var snapshot = status is null
+            ? string.Empty
+            : status.UpdatedAtUtc + "|" + status.AppliedRevision + "|" +
+              string.Join(",", status.Apps.Select(app => app.Id + ":" + app.Rule + ":" + app.UnlockedSessions));
         if (snapshot == lastSnapshot)
         {
             return;

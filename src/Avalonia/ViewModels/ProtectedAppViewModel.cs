@@ -8,7 +8,7 @@ public class ProtectedAppViewModel : ObservableObject
     private string name = string.Empty;
     private string identity = string.Empty;
     private string path = string.Empty;
-    private string status = "\uB300\uAE30";
+    private string status = "열림";
     private bool isLocked;
     private string policySummary = string.Empty;
     private Bitmap? icon;
@@ -84,10 +84,34 @@ public class ProtectedAppViewModel : ObservableObject
         {
             if (SetProperty(ref isLocked, value))
             {
-                Status = value ? "잠김" : "열림";
+                RefreshStatus();
                 OnPropertyChanged(nameof(AutomationName));
             }
         }
+    }
+
+    // Sessions in which the service currently has this locked app unlocked with a PIN (status.json).
+    public int UnlockedSessions
+    {
+        get => unlockedSessions;
+        set
+        {
+            if (SetProperty(ref unlockedSessions, value))
+            {
+                RefreshStatus();
+                OnPropertyChanged(nameof(LockOnContent));
+                OnPropertyChanged(nameof(AutomationName));
+            }
+        }
+    }
+
+    private int unlockedSessions;
+
+    public string LockOnContent => unlockedSessions > 0 ? "잠금 해제됨(사용 중)" : "잠김";
+
+    private void RefreshStatus()
+    {
+        Status = !isLocked ? "열림" : unlockedSessions > 0 ? "잠금 해제됨(사용 중)" : "잠김";
     }
 
     public string PolicySummary
@@ -165,7 +189,7 @@ public class ProtectedAppViewModel : ObservableObject
         set => SetProperty(ref isSelected, value);
     }
 
-    public string AutomationName => $"{Name}, {(IsLocked ? "잠김" : "열림")}";
+    public string AutomationName => $"{Name}, {Status}";
 
     public override string ToString()
     {

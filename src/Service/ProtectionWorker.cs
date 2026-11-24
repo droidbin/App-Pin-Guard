@@ -9,7 +9,7 @@ internal sealed class ProtectionWorker : IDisposable
     private readonly string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
     private readonly object sync = new object();
     private StatusWriter status;
-    private GrantTable grants;
+    private UnlockTable unlocks;
     private PolicyHost policyHost;
     private RuleEngine rules;
     private ProcessWatcher watcher;
@@ -32,13 +32,13 @@ internal sealed class ProtectionWorker : IDisposable
             catch (Exception ex) { ServiceLog.Exception("migration.failed", ex); }
 
             status = new StatusWriter();
-            grants = new GrantTable();
+            unlocks = new UnlockTable { LoadAttempts = LoadAttempts, SaveAttempts = SaveAttempts };
             policyHost = new PolicyHost(status);
             rules = new RuleEngine(gatePath, status, policyHost.RequestApply);
-            watcher = new ProcessWatcher(policyHost, grants, status, gatePath);
-            spool = new GateSpoolServer(policyHost, grants, gatePath);
+            watcher = new ProcessWatcher(policyHost, unlocks, status, gatePath);
+            spool = new GateSpoolServer(policyHost, unlocks, gatePath);
             policyHost.Rules = rules;
-            policyHost.Grants = grants;
+            policyHost.Unlocks = unlocks;
             policyHost.Watcher = watcher;
 
             bool isSystem;
@@ -77,7 +77,7 @@ internal sealed class ProtectionWorker : IDisposable
             Quiet(rules);
             Quiet(watcher);
             Quiet(agents);
-            if (grants != null) grants.RevokeAll();
+            if (unlocks != null) unlocks.RevokeAll();
             ServiceLog.Info("service.stopped");
             ServiceLog.EventLogEntry("Service stopped.", System.Diagnostics.EventLogEntryType.Information);
         }
@@ -88,10 +88,41 @@ internal sealed class ProtectionWorker : IDisposable
         Stop();
     }
 
+    // Screen lock, disconnect, logoff, suspend: every unlock ends and the agents hide the apps again.
     internal void RevokeLaunchGrants()
     {
-        GrantTable table = grants;
-        if (table != null) table.RevokeAll();
+        UnlockTable table = unlocks;
+        PolicyHost host = policyHost;
+        if (table == null) return;
+        table.RevokeAll();
+        if (host != null) host.RequestApply();
+    }
+
+    // A logoff ends only the unlocks of that session; other sessions keep theirs.
+    internal void RevokeSession(int sessionId)
+    {
+        UnlockTable table = unlocks;
+        PolicyHost host = policyHost;
+        if (table == null) return;
+        if (table.RevokeSession(sessionId))
+        {
+            ServiceLog.Info("unlock.session.revoked", "session=" + sessionId);
+            if (host != null) host.RequestApply();
+        }
+    }
+
+    private static LaunchAttemptState LoadAttempts(string sid)
+    {
+        try { return PolicyStore.Read<LaunchAttemptState>(System.IO.Path.Combine(WapPaths.AttemptsDir, sid + ".json")) ?? new LaunchAttemptState(); }
+        catch (InvalidDataException) { return new LaunchAttemptState(); }
+        catch (IOException) { return new LaunchAttemptState(); }
+    }
+
+    private static void SaveAttempts(string sid, LaunchAttemptState state)
+    {
+        try { PolicyStore.WriteAtomic(System.IO.Path.Combine(WapPaths.AttemptsDir, sid + ".json"), state); }
+        catch (IOException ex) { ServiceLog.Exception("attempts.save.failed", ex); }
+        catch (UnauthorizedAccessException ex) { ServiceLog.Exception("attempts.save.failed", ex); }
     }
 
     internal void ReconcileAgents()

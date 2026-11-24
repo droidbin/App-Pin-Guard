@@ -24,6 +24,7 @@
     <Compile Include="../../src/Shared/PolicyRules.cs" Link="PolicyRules.cs" />
     <Compile Include="../../src/Shared/GateSpool.cs" Link="GateSpool.cs" />
     <Compile Include="../../src/Shared/EnforcementFile.cs" Link="EnforcementFile.cs" />
+    <Compile Include="../../src/Service/UnlockTable.cs" Link="UnlockTable.cs" />
     <Compile Include="../../src/Shared/WapPaths.cs" Link="WapPaths.cs" />
     <Compile Include="../../src/Shared/WapSecurity.cs" Link="WapSecurity.cs" />
     <Compile Include="../../src/Avalonia/Services/GitHubUpdateService.cs" Link="GitHubUpdateService.cs" />

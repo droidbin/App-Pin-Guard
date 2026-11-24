@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 
@@ -27,36 +28,31 @@ internal static class AgentLog
 internal sealed class WindowAgent
 {
     private const uint WmClose = 0x0010;
-    private static readonly StringComparer Names = StringComparer.OrdinalIgnoreCase;
+    private static readonly TimeSpan PromptInterval = TimeSpan.FromSeconds(5);
 
-    private readonly HashSet<string> hidePaths = new HashSet<string>(Names);
-    private readonly HashSet<string> hidePackages = new HashSet<string>(Names);
-    private readonly Dictionary<string, long> hideBefore = new Dictionary<string, long>(Names);
-    private readonly HashSet<string> closeTargets = new HashSet<string>(Names);
-    private readonly Dictionary<int, long> granted = new Dictionary<int, long>();
     private readonly Dictionary<IntPtr, WindowIdentity> hidden = new Dictionary<IntPtr, WindowIdentity>();
-    private readonly Dictionary<uint, ProcessInfo> processes = new Dictionary<uint, ProcessInfo>();
+    private readonly WindowResolver resolver = new WindowResolver();
+    private readonly HashSet<string> closeTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Process> prompts = new Dictionary<string, Process>(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> nextPrompt = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+    private readonly HashSet<string> promptedSinceStart = new HashSet<string>(StringComparer.Ordinal);
     private readonly string journal;
+    private readonly int session;
+    private readonly string sid;
+    private EnforcementData current = new EnforcementData();
     private bool policyReady;
     private long policyRevision = -1;
     private long closedRevision = -1;
     private string lastPolicyText;
+    private string lastUnlockState = string.Empty;
     private int hiddenSinceSummary, restoredSinceSummary;
     private DateTime nextSummary = DateTime.UtcNow.AddMinutes(1);
-    private Process unlockPrompt;
-    private DateTime nextPrompt = DateTime.MinValue;
 
-    private struct ProcessInfo
-    {
-        internal string Path;
-        internal string Family;
-        internal long StartTicks;
-        internal bool Matches;
-    }
-
-    internal WindowAgent(string journal)
+    internal WindowAgent(string journal, int session, string sid)
     {
         this.journal = journal;
+        this.session = session;
+        this.sid = sid ?? string.Empty;
         if (!File.Exists(journal)) return;
         foreach (string line in File.ReadLines(journal).Take(8192))
         {
@@ -82,7 +78,9 @@ internal sealed class WindowAgent
                 {
                     string journal = Path.Combine(WapPaths.UserDataDir, "window-agent-" + self.SessionId + ".state");
                     AgentLog.Info("agent.started", "session=" + self.SessionId, "pid=" + self.Id);
-                    int code = new WindowAgent(journal).Run();
+                    string userSid;
+                    using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) userSid = identity.User == null ? string.Empty : identity.User.Value;
+                    int code = new WindowAgent(journal, self.SessionId, userSid).Run();
                     AgentLog.Info("agent.exit", "code=" + code);
                     return code;
                 }
@@ -127,11 +125,8 @@ internal sealed class WindowAgent
                 // Wakes early when the service reports a change; otherwise rescans after 350 ms.
                 int signalled = WaitHandle.WaitAny(new WaitHandle[] { stop, changed }, 350);
                 if (signalled == 0) break;
-                if (signalled == 1)
-                {
-                    nextPolicy = DateTime.MinValue;
-                    Thread.Sleep(100);
-                }
+                // The file is replaced atomically, so it can be read right away.
+                if (signalled == 1) nextPolicy = DateTime.MinValue;
             }
             // Stop event: hidden windows are deliberately left hidden. The next agent (or the uninstall
             // procedure, which clears the policy first) decides whether to restore them.
@@ -166,24 +161,29 @@ internal sealed class WindowAgent
         catch (FormatException ex) { AgentLog.Exception("agent.policy.invalid", ex); }
     }
 
-    private void Apply(EnforcementData data)
+    internal void Apply(EnforcementData data)
     {
-        hidePaths.Clear();
-        hidePackages.Clear();
-        hideBefore.Clear();
+        current = data;
+        resolver.SetApps(data.Apps);
         closeTargets.Clear();
-        granted.Clear();
-        foreach (string path in data.HidePaths) hidePaths.Add(path);
-        foreach (string family in data.HidePackages) hidePackages.Add(family);
-        foreach (var entry in data.HideBefore) hideBefore[entry.Key] = entry.Value;
         foreach (string target in data.Close) closeTargets.Add(target);
-        foreach (var entry in data.Granted) granted[entry.Key] = entry.Value;
         policyReady = true;
 
+        // An app that is unlocked again may get a fresh prompt the next time it is locked.
+        foreach (EnforcementApp app in data.Apps)
+            if (data.IsUnlocked(session, sid, app.Id)) promptedSinceStart.Remove(app.Id);
+
+        string unlockState = string.Join(",", data.Unlocks
+            .Where(u => u.Session == session && string.Equals(u.Sid, sid, StringComparison.OrdinalIgnoreCase))
+            .Select(u => u.AppId).OrderBy(id => id, StringComparer.Ordinal).ToArray());
+        if (unlockState != lastUnlockState)
+        {
+            AgentLog.Info("agent.unlock.state", "unlocked=" + (unlockState.Length == 0 ? 0 : unlockState.Split(',').Length));
+            lastUnlockState = unlockState;
+        }
         if (data.Revision != policyRevision)
         {
-            AgentLog.Info("agent.policy.applied", "rev=" + data.Revision, "hide=" + (hidePaths.Count + hidePackages.Count),
-                "before=" + hideBefore.Count, "close=" + closeTargets.Count);
+            AgentLog.Info("agent.policy.applied", "rev=" + data.Revision, "apps=" + data.Apps.Count);
             policyRevision = data.Revision;
         }
         // WM_CLOSE goes out once per revision, so a persistent C: line never closes the app again.
@@ -198,14 +198,16 @@ internal sealed class WindowAgent
 
     internal void Scan()
     {
-        processes.Clear();
+        resolver.Reset();
         RestoreWindows(false);
-        if (hidePaths.Count == 0 && hidePackages.Count == 0 && hideBefore.Count == 0) return;
+        if (current.Apps.Count == 0) return;
         EnumWindows((window, ignored) =>
         {
             try
             {
-                if (!IsWindowVisible(window) || !MatchesWindow(window)) return true;
+                if (!IsWindowVisible(window)) return true;
+                WindowResolver.Resolution resolution;
+                if (!resolver.Resolve(window, out resolution) || !ShouldHide(resolution)) return true;
                 WindowIdentity identity;
                 if (!TryIdentify(window, out identity)) return true;
                 if (!hidden.ContainsKey(window) || !hidden[window].Equals(identity))
@@ -217,7 +219,7 @@ internal sealed class WindowAgent
                     catch (IOException) { hidden.Remove(window); return true; }
                     catch (UnauthorizedAccessException) { hidden.Remove(window); return true; }
                     hiddenSinceSummary++;
-                    PromptUnlock(identity.Pid);
+                    PromptUnlock(resolution);
                 }
                 ShowWindowAsync(window, 0);
             }
@@ -226,52 +228,83 @@ internal sealed class WindowAgent
         }, IntPtr.Zero);
     }
 
-    // A newly hidden window of a window-mode Win32 app (browser): ask for the PIN through Gate. One prompt at a time.
-    private void PromptUnlock(uint pid)
+    // The window belongs to a locked app that is not unlocked in this session. Launch-mode apps are only
+    // hidden for processes that were already running when the app was locked.
+    private bool ShouldHide(WindowResolver.Resolution resolution)
     {
-        ProcessInfo info;
-        if (!processes.TryGetValue(pid, out info) || info.Path == null || !hidePaths.Contains(info.Path)) return;
+        if (current.IsUnlocked(session, sid, resolution.App.Id)) return false;
+        if (resolution.App.Kind == EnforcementApp.KindLaunch)
+            return resolution.StartTicks > 0 && resolution.StartTicks < resolution.App.LockedAtTicks;
+        return true;
+    }
+
+    // A newly hidden window of a locked app: ask for the PIN through Gate. Gate itself keeps the prompt single
+    // per app and session (named mutex), so a restarted agent cannot create a second one.
+    private void PromptUnlock(WindowResolver.Resolution resolution)
+    {
+        string appId = resolution.App.Id;
+        promptedSinceStart.Add(appId);
         try
         {
-            if (unlockPrompt != null)
+            Process running;
+            if (prompts.TryGetValue(appId, out running))
             {
-                bool running = !unlockPrompt.HasExited;
-                if (running) return;
-                unlockPrompt.Dispose();
-                unlockPrompt = null;
+                bool alive = !running.HasExited;
+                if (alive) return;
+                running.Dispose();
+                prompts.Remove(appId);
             }
-            if (DateTime.UtcNow < nextPrompt) return;
+            DateTime due;
+            if (nextPrompt.TryGetValue(appId, out due) && DateTime.UtcNow < due) return;
             string gate = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, WapPaths.GateExeName);
-            if (!File.Exists(gate)) return;
-            nextPrompt = DateTime.UtcNow.AddSeconds(2);
-            unlockPrompt = Process.Start(new ProcessStartInfo(gate,
-                "--unlock " + pid.ToString(CultureInfo.InvariantCulture) + " \"" + info.Path + "\"") { UseShellExecute = false });
-            AgentLog.Info("agent.unlock.prompt", "pid=" + pid);
+            string exePath = !string.IsNullOrEmpty(resolution.Path)
+                ? resolution.Path
+                : (resolution.App.Kind == EnforcementApp.KindPackage ? null : resolution.App.Match);
+            if (!File.Exists(gate) || string.IsNullOrEmpty(exePath)) return;
+            nextPrompt[appId] = DateTime.UtcNow.Add(PromptInterval);
+            prompts[appId] = Process.Start(new ProcessStartInfo(gate,
+                "--unlock " + appId + " \"" + exePath + "\"") { UseShellExecute = false });
+            AgentLog.Info("agent.unlock.prompt", "app=" + Path.GetFileName(exePath), "id=" + appId);
         }
         catch (System.ComponentModel.Win32Exception ex) { AgentLog.Exception("agent.unlock.failed", ex); }
         catch (InvalidOperationException ex) { AgentLog.Exception("agent.unlock.failed", ex); }
     }
 
-    // Restores windows whose process no longer needs hiding (the app was unlocked or the policy changed).
+    // Restores windows whose app is unlocked or no longer locked.
     private void RestoreWindows(bool all)
     {
         bool changed = false;
+        Dictionary<string, int> restored = null;
         foreach (var entry in hidden.ToArray())
         {
             WindowIdentity identity;
             if (TryIdentify(entry.Key, out identity) && identity.Equals(entry.Value))
             {
-                if (!all && MatchesWindow(entry.Key)) continue;
+                WindowResolver.Resolution resolution;
+                bool resolved = resolver.Resolve(entry.Key, out resolution);
+                if (!all && resolved && ShouldHide(resolution))
+                {
+                    // A window an earlier agent hid: the PIN prompt it had open is gone, so ask once after a restart.
+                    if (!promptedSinceStart.Contains(resolution.App.Id)) PromptUnlock(resolution);
+                    continue;
+                }
                 if (!IsWindowVisible(entry.Key))
                 {
                     ShowWindowAsync(entry.Key, 8);
                     restoredSinceSummary++;
+                    if (restored == null) restored = new Dictionary<string, int>(StringComparer.Ordinal);
+                    string id = resolved ? resolution.App.Id : "unknown";
+                    int count;
+                    restored.TryGetValue(id, out count);
+                    restored[id] = count + 1;
                     continue;
                 }
             }
             hidden.Remove(entry.Key);
             changed = true;
         }
+        if (restored != null)
+            foreach (var pair in restored) AgentLog.Info("agent.restore", "app=" + pair.Key, "count=" + pair.Value);
         if (changed)
         {
             try { SaveJournal(); }
@@ -282,7 +315,7 @@ internal sealed class WindowAgent
 
     private void CloseWindows()
     {
-        processes.Clear();
+        resolver.Reset();
         EnumWindows((window, ignored) =>
         {
             try
@@ -290,8 +323,9 @@ internal sealed class WindowAgent
                 if (!IsWindowVisible(window)) return true;
                 uint pid;
                 GetWindowThreadProcessId(window, out pid);
-                ProcessInfo info = Describe(pid);
-                if (closeTargets.Contains(info.Path ?? string.Empty) || closeTargets.Contains(info.Family ?? string.Empty))
+                string path, family;
+                resolver.DescribeProcess(pid, out path, out family);
+                if (closeTargets.Contains(path ?? string.Empty) || closeTargets.Contains(family ?? string.Empty))
                     PostMessage(window, WmClose, IntPtr.Zero, IntPtr.Zero);
             }
             catch (Exception) { }
@@ -325,72 +359,7 @@ internal sealed class WindowAgent
         restoredSinceSummary = 0;
     }
 
-    // ---- matching ----------------------------------------------------------------------------------
-
-    private bool MatchesWindow(IntPtr window)
-    {
-        uint owner;
-        GetWindowThreadProcessId(window, out owner);
-        if (Describe(owner).Matches) return true;
-        if (hidePackages.Count == 0) return false;
-        // A packaged app's frame is owned by ApplicationFrameHost; the app's own process owns a child window.
-        bool match = false;
-        EnumChildWindows(window, (child, ignored) =>
-        {
-            uint pid;
-            GetWindowThreadProcessId(child, out pid);
-            match = pid != owner && Describe(pid).Matches;
-            return !match;
-        }, IntPtr.Zero);
-        return match;
-    }
-
-    private ProcessInfo Describe(uint pid)
-    {
-        ProcessInfo info;
-        if (pid == 0) return default(ProcessInfo);
-        if (processes.TryGetValue(pid, out info)) return info;
-        var handle = OpenProcess(0x1000, false, pid);
-        if (handle != IntPtr.Zero)
-        {
-            try
-            {
-                var image = new StringBuilder(32768);
-                int length = image.Capacity;
-                if (QueryFullProcessImageName(handle, 0, image, ref length)) info.Path = image.ToString();
-                long created, exited, kernel, user;
-                if (GetProcessTimes(handle, out created, out exited, out kernel, out user) && created > 0)
-                    info.StartTicks = DateTime.FromFileTimeUtc(created).Ticks;
-                if (hidePackages.Count > 0)
-                {
-                    int count = 0;
-                    if (GetPackageFamilyName(handle, ref count, null) == 122 && count > 0 && count < 512)
-                    {
-                        var family = new StringBuilder(count);
-                        if (GetPackageFamilyName(handle, ref count, family) == 0) info.Family = family.ToString();
-                    }
-                }
-            }
-            finally { CloseHandle(handle); }
-        }
-        info.Matches = ShouldHide(pid, info);
-        processes[pid] = info;
-        return info;
-    }
-
-    private bool ShouldHide(uint pid, ProcessInfo info)
-    {
-        long approvedStart;
-        // Approved launches are never hidden.
-        if (granted.TryGetValue((int)pid, out approvedStart) && approvedStart == info.StartTicks) return false;
-        if (info.Path != null)
-        {
-            if (hidePaths.Contains(info.Path)) return true;
-            long lockedAt;
-            if (hideBefore.TryGetValue(info.Path, out lockedAt) && info.StartTicks > 0 && info.StartTicks < lockedAt) return true;
-        }
-        return info.Family != null && hidePackages.Contains(info.Family);
-    }
+    // ---- window identity ---------------------------------------------------------------------------
 
     private static bool TryIdentify(IntPtr window, out WindowIdentity identity)
     {
@@ -418,17 +387,8 @@ internal sealed class WindowAgent
 
     private delegate bool EnumProc(IntPtr window, IntPtr state);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr state);
-    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr window, EnumProc callback, IntPtr state);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool ShowWindowAsync(IntPtr window, int command);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
-    [DllImport("kernel32.dll")] private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
-    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
-    [DllImport("kernel32.dll")]
-    private static extern bool GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder image, ref int size);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    private static extern int GetPackageFamilyName(IntPtr process, ref int length, StringBuilder name);
 }

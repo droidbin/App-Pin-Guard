@@ -17,8 +17,11 @@ internal sealed class ProcessWatcher : IDisposable
     private static readonly TimeSpan CloseVisible = TimeSpan.FromSeconds(10);
 
     private readonly PolicyHost host;
-    private readonly GrantTable grants;
+    private readonly UnlockTable unlocks;
     private readonly StatusWriter status;
+    // pid -> which locked app (if any) the process belongs to; refilled whenever the policy revision changes.
+    private readonly Dictionary<int, CountedProcess> counted = new Dictionary<int, CountedProcess>();
+    private long countedRevision = -1;
     private readonly string gatePath;
     private readonly object evalLock = new object();
     private readonly HashSet<string> handled = new HashSet<string>(StringComparer.Ordinal);
@@ -42,10 +45,34 @@ internal sealed class ProcessWatcher : IDisposable
         internal bool Killed;
     }
 
-    internal ProcessWatcher(PolicyHost host, GrantTable grants, StatusWriter status, string gatePath)
+    private sealed class CountedProcess
+    {
+        internal long StartTicks;
+        internal int Session;
+        internal string AppId;
+        internal string Sid;
+    }
+
+    // An app that has at least one process in a user session (from the last one-second snapshot).
+    internal struct RunningApp
+    {
+        internal string Sid;
+        internal int Session;
+        internal string AppId;
+    }
+
+    private List<RunningApp> lastRunning = new List<RunningApp>();
+
+    // Which apps are open in which user session right now, whether locked or not.
+    internal List<RunningApp> RunningApps()
+    {
+        lock (counted) return new List<RunningApp>(lastRunning);
+    }
+
+    internal ProcessWatcher(PolicyHost host, UnlockTable unlocks, StatusWriter status, string gatePath)
     {
         this.host = host;
-        this.grants = grants;
+        this.unlocks = unlocks;
         this.status = status;
         this.gatePath = gatePath;
         Mode = "polling";
@@ -136,11 +163,86 @@ internal sealed class ProcessWatcher : IDisposable
             if (!primed) return;
             foreach (NativeApi.ProcessEntry entry in fresh)
                 Evaluate(entry.Pid, entry.ParentPid, NativeApi.GetSessionId(entry.Pid));
+            ObserveUnlocks(processes);
         }
         catch (Exception ex)
         {
             ServiceLog.Exception("watcher.sweep.failed", ex);
         }
+    }
+
+    // Tells the unlock table which locked apps are running in which session, so it can end unlocks of closed apps.
+    private void ObserveUnlocks(List<NativeApi.ProcessEntry> processes)
+    {
+        lock (counted) ObserveUnlocksLocked(processes);
+    }
+
+    private void ObserveUnlocksLocked(List<NativeApi.ProcessEntry> processes)
+    {
+        PolicyState state = host.Current;
+        if (state == null) return;
+        bool anyPackaged = state.Policy.Apps.Any(a => a.IsPackaged);
+        if (countedRevision != state.Policy.Revision)
+        {
+            counted.Clear();
+            countedRevision = state.Policy.Revision;
+        }
+
+        var running = new Dictionary<string, int>(StringComparer.Ordinal);
+        var present = new HashSet<int>();
+        foreach (NativeApi.ProcessEntry entry in processes)
+        {
+            if (entry.Pid <= 4) continue;
+            present.Add(entry.Pid);
+            CountedProcess known;
+            if (counted.TryGetValue(entry.Pid, out known))
+            {
+                // A reused pid must not inherit the previous owner's app.
+                if (known.AppId == null || NativeApi.GetStartTicks(entry.Pid) == known.StartTicks)
+                {
+                    Count(running, known);
+                    continue;
+                }
+                counted.Remove(entry.Pid);
+            }
+
+            long start = NativeApi.GetStartTicks(entry.Pid);
+            string image = start == 0 ? null : NativeApi.GetImagePath(entry.Pid);
+            var created = new CountedProcess { StartTicks = start, Session = NativeApi.GetSessionId(entry.Pid) };
+            if (image != null && created.Session > 0)
+            {
+                string family = anyPackaged ? NativeApi.GetPackageFamilyName(entry.Pid) : null;
+                // Unlocked apps are counted too: the relock group needs to know which ones are still open.
+                AppPolicy app = PolicyRules.MatchApp(state.Policy, image, family, false);
+                if (app != null)
+                {
+                    created.AppId = app.Id;
+                    created.Sid = NativeApi.GetUserSid(entry.Pid);
+                }
+            }
+            counted[entry.Pid] = created;
+            Count(running, created);
+        }
+        foreach (int pid in counted.Keys.ToArray())
+            if (!present.Contains(pid)) counted.Remove(pid);
+        lastRunning = counted.Values.Where(c => c.AppId != null && c.Sid != null)
+            .Select(c => new RunningApp { Sid = c.Sid, Session = c.Session, AppId = c.AppId })
+            .Distinct().ToList();
+
+        if (unlocks.Observe(running, DateTime.UtcNow))
+        {
+            ServiceLog.Info("unlock.ended");
+            host.RequestApply();
+        }
+    }
+
+    private static void Count(Dictionary<string, int> running, CountedProcess process)
+    {
+        if (process.AppId == null) return;
+        string key = process.Session.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + process.AppId;
+        int count;
+        running.TryGetValue(key, out count);
+        running[key] = count + 1;
     }
 
     // ---- decision ----------------------------------------------------------------------------------
@@ -164,21 +266,10 @@ internal sealed class ProcessWatcher : IDisposable
 
             DateTime now = DateTime.UtcNow;
             if (!PolicyRules.IsWithinLockHours(app.Launch, DateTime.Now)) return;
-            if (grants.IsProcessGranted(pid, start, app.Id)) return;
-
-            // Electron/Chrome-style apps start more copies of their own exe from an approved process.
-            long parentStart = parentPid > 4 ? NativeApi.GetStartTicks(parentPid) : 0;
-            if (parentStart != 0 && grants.IsProcessGranted(parentPid, parentStart, app.Id))
-            {
-                grants.RegisterProcess(pid, start, app.Id);
-                return;
-            }
-            // The child of a Gate that was approved for this app a moment ago, before "track" has arrived.
-            if (grants.IsApprovedGateChild(parentPid, app.Id, now))
-            {
-                grants.RegisterProcess(pid, start, app.Id);
-                return;
-            }
+            // Unlocked means the app, not one process: Gate creates the record before it starts the app, and every
+            // helper or restarted process of the app passes the same check.
+            string sid = NativeApi.GetUserSid(pid);
+            if (sid != null && unlocks.IsUnlocked(sid, session, app.Id, now)) return;
 
             bool terminated = NativeApi.Terminate(pid);
             status.MarkBlocked(app.Id, now);

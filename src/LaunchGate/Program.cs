@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 
 internal static class GateLog
@@ -21,6 +24,32 @@ internal static class GateLog
 
 internal static class Gate
 {
+    private const int PromptWaitSeconds = 120;
+    private const int WindowWaitMilliseconds = 3000;
+    private const int LaunchWindowWaitMilliseconds = 5000;
+
+    private enum PromptOutcome
+    {
+        // PIN was verified and approved; the app window was already activated before the prompt closed.
+        Approved,
+        // PIN was rejected (or the service was unavailable / rate-limited) or launch failed.
+        Failed,
+        Cancelled,
+        // The app was unlocked (or stopped being locked) while the prompt was open: it closed itself.
+        Released,
+        // Another Gate already shows the prompt of this app in this session.
+        Busy,
+    }
+
+    private sealed class SubmitResult
+    {
+        internal GateResponse Response;
+        internal Exception Error;
+        internal bool Approved;
+        internal IntPtr WindowToActivate;
+        internal string FocusReason;
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -40,8 +69,7 @@ internal static class Gate
             return 1;
         }
 
-        // Started by the window agent when it hid a window of a window-mode app (browser): ask for the PIN and,
-        // when the service approves, have it release that running process.
+        // Started by the window agent when it hid a window of a locked app: ask for the PIN and unlock the whole app.
         if (args.Length >= 3 && args[0] == "--unlock") return Unlock(args[1], args[2]);
 
         if (args.Length < 2 || args[0] != "--launch") return 1;
@@ -50,14 +78,40 @@ internal static class Gate
             if (!Path.IsPathRooted(args[1])) throw new InvalidDataException("보호 앱의 전체 경로가 필요합니다.");
             string path = Path.GetFullPath(args[1]);
             if (!File.Exists(path)) throw new FileNotFoundException("보호 앱을 찾을 수 없습니다.");
+            string[] launchArgs = args.Skip(2).ToArray();
             GateLog.Info("gate.launch.requested", "app=" + System.IO.Path.GetFileName(path));
-            GateResponse response = Authorize(path, string.Empty);
+            GateResponse response = AuthorizeByPath(path, string.Empty);
+
             if (response.Result == GateSpool.ResultPrompt)
             {
-                string pin = Prompt(path);
-                if (string.IsNullOrWhiteSpace(pin)) return 1;
-                response = Authorize(path, pin);
+                string promptId = string.IsNullOrEmpty(response.AppId) ? "unknown" : response.AppId;
+                GateResponse submitResponse;
+                Exception submitError;
+                PromptOutcome outcome = RunPrompt(path, null, new[] { promptId }, false,
+                    delegate(string pin) { return HandleLaunchSubmit(path, launchArgs, promptId, pin); },
+                    out submitResponse, out submitError);
+
+                if (outcome == PromptOutcome.Approved) return 0;
+                if (outcome == PromptOutcome.Cancelled) return 1;
+                if (outcome == PromptOutcome.Failed)
+                {
+                    if (submitError != null) throw submitError;
+                    GateLog.Info("gate.launch.refused", "result=" + (submitResponse == null ? "unknown" : submitResponse.Result));
+                    ShowError(DescribeRefusal(submitResponse));
+                    return 1;
+                }
+                if (outcome == PromptOutcome.Busy)
+                {
+                    response = WaitForOtherPrompt(path, promptId);
+                    if (response == null) return 1;
+                }
+                else
+                {
+                    // Prompt closed itself because the app was unlocked elsewhere.
+                    response = AuthorizeByPath(path, string.Empty);
+                }
             }
+
             if (response.Result != GateSpool.ResultApproved)
             {
                 GateLog.Info("gate.launch.refused", "result=" + response.Result);
@@ -65,10 +119,10 @@ internal static class Gate
                 return 1;
             }
 
-            var child = Launch(path, args.Skip(2).ToArray());
-            EnsureCursorVisible();
+            uint child = Launch(path, launchArgs);
             GateLog.Info("gate.launch.started", "pid=" + child);
-            Track(path, (int)child);
+            ActivateAppWindow(string.IsNullOrEmpty(response.AppId) ? null : new[] { response.AppId }, path,
+                LaunchWindowWaitMilliseconds, "launch");
             return 0;
         }
         catch (Exception ex)
@@ -79,31 +133,97 @@ internal static class Gate
         }
     }
 
-    private static int Unlock(string pidText, string appPath)
+    private static SubmitResult HandleLaunchSubmit(string path, string[] launchArgs, string promptId, string pin)
+    {
+        var result = new SubmitResult { FocusReason = "launch" };
+        try
+        {
+            GateResponse response = AuthorizeByPath(path, pin);
+            result.Response = response;
+            if (response.Result != GateSpool.ResultApproved) return result;
+
+            uint child = Launch(path, launchArgs);
+            GateLog.Info("gate.launch.started", "pid=" + child);
+            result.Approved = true;
+            LogFocus("gate.focus", "stage=approved", "reason=launch");
+            string targetId = string.IsNullOrEmpty(response.AppId) ? promptId : response.AppId;
+            result.WindowToActivate = WaitForAppWindow(new[] { targetId }, path, LaunchWindowWaitMilliseconds);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex;
+            return result;
+        }
+    }
+
+    // Waits while another Gate shows the PIN prompt for this app: checks authorize every second up to 120 s.
+    // Returns the final GateResponse if authorization completed, or null if timed out or the other prompt was cancelled.
+    private static GateResponse WaitForOtherPrompt(string path, string appId)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(PromptWaitSeconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(1000);
+            GateResponse response = AuthorizeByPath(path, string.Empty);
+            if (response.Result != GateSpool.ResultPrompt) return response;
+            if (IsPromptMutexFree(appId))
+            {
+                // The other prompt closed: re-check once to avoid a race with approval, then exit if still Prompt.
+                GateResponse finalCheck = AuthorizeByPath(path, string.Empty);
+                return finalCheck.Result == GateSpool.ResultPrompt ? null : finalCheck;
+            }
+        }
+        return null;
+    }
+
+    private static int Unlock(string appId, string appPath)
     {
         try
         {
-            int target;
-            if (!int.TryParse(pidText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out target) ||
-                target <= 0 || !Path.IsPathRooted(appPath)) return 1;
+            Guid parsed;
+            if (!Guid.TryParse(appId, out parsed) || !Path.IsPathRooted(appPath)) return 1;
             string path = Path.GetFullPath(appPath);
-            GateLog.Info("gate.unlock.requested", "app=" + System.IO.Path.GetFileName(path), "pid=" + target);
-            GateResponse response = Authorize(path, string.Empty);
+            GateLog.Info("gate.unlock.requested", "app=" + System.IO.Path.GetFileName(path), "id=" + appId);
+            GateResponse response = AuthorizeByApp(appId, string.Empty, null);
+            List<string> groupIds = null;
             if (response.Result == GateSpool.ResultPrompt)
             {
-                string pin = Prompt(path);
-                if (string.IsNullOrWhiteSpace(pin)) return 1;
-                response = Authorize(path, pin);
+                // Several apps relocked together (screen lock, "lock all"): one prompt and one PIN for all of them.
+                List<string> groupNames;
+                groupIds = FindRelockedGroup(appId, out groupNames);
+                IList<string> promptAppIds = groupIds == null ? (IList<string>)new[] { appId } : groupIds;
+                GateResponse submitResponse;
+                Exception submitError;
+                PromptOutcome outcome = RunPrompt(path, groupNames, promptAppIds, true,
+                    delegate(string pin) { return HandleUnlockSubmit(appId, path, groupIds, promptAppIds, pin); },
+                    out submitResponse, out submitError);
+
+                if (outcome == PromptOutcome.Approved) return 0;
+                if (outcome == PromptOutcome.Busy)
+                {
+                    GateLog.Info("gate.unlock.busy", "id=" + appId);
+                    return 0;
+                }
+                if (outcome == PromptOutcome.Released)
+                {
+                    GateLog.Info("gate.unlock.released", "id=" + appId);
+                    return 0;
+                }
+                if (outcome == PromptOutcome.Cancelled) return 1;
+                if (submitError != null) throw submitError;
+                GateLog.Info("gate.unlock.refused", "result=" + (submitResponse == null ? "unknown" : submitResponse.Result));
+                ShowError(DescribeRefusal(submitResponse));
+                return 1;
             }
-            if (response.Result == GateSpool.ResultApproved)
-                response = Exchange(new GateRequest { Op = GateSpool.OpUnlock, Pid = Process.GetCurrentProcess().Id, Path = path, Child = target });
             if (response.Result != GateSpool.ResultApproved)
             {
                 GateLog.Info("gate.unlock.refused", "result=" + response.Result);
                 ShowError(DescribeRefusal(response));
                 return 1;
             }
-            GateLog.Info("gate.unlock.approved", "pid=" + target);
+            GateLog.Info("gate.unlock.approved", "id=" + appId, "group=0");
+            ActivateAppWindow(new[] { appId }, path, WindowWaitMilliseconds, "unlock");
             return 0;
         }
         catch (Exception ex)
@@ -114,8 +234,32 @@ internal static class Gate
         }
     }
 
+    private static SubmitResult HandleUnlockSubmit(string appId, string path, List<string> groupIds,
+        IList<string> promptAppIds, string pin)
+    {
+        var result = new SubmitResult { FocusReason = "unlock" };
+        try
+        {
+            GateResponse response = AuthorizeByApp(appId, pin, groupIds);
+            result.Response = response;
+            if (response.Result != GateSpool.ResultApproved) return result;
+
+            GateLog.Info("gate.unlock.approved", "id=" + appId, "group=" + (groupIds == null ? 0 : groupIds.Count));
+            result.Approved = true;
+            LogFocus("gate.focus", "stage=approved", "reason=unlock");
+            result.WindowToActivate = WaitForAppWindow(promptAppIds, path, WindowWaitMilliseconds);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex;
+            return result;
+        }
+    }
+
     private static string DescribeRefusal(GateResponse response)
     {
+        if (response == null) return "PIN이 일치하지 않거나 현재 실행할 수 없는 앱입니다.";
         switch (response.Result)
         {
             case GateSpool.ResultRateLimited:
@@ -129,82 +273,360 @@ internal static class Gate
         }
     }
 
-    private static GateResponse Authorize(string path, string pin)
+    private static GateResponse AuthorizeByPath(string path, string pin)
     {
-        return Exchange(new GateRequest { Op = GateSpool.OpAuthorize, Pid = Process.GetCurrentProcess().Id, Path = path, Pin = pin });
+        return GateSpool.Exchange(new GateRequest { Op = GateSpool.OpAuthorize, Pid = Process.GetCurrentProcess().Id, Path = path, Pin = pin });
     }
 
-    private static void Track(string path, int child)
+    private static GateResponse AuthorizeByApp(string appId, string pin, IList<string> groupIds)
     {
-        try
-        {
-            Exchange(new GateRequest { Op = GateSpool.OpTrack, Pid = Process.GetCurrentProcess().Id, Path = path, Child = child });
-        }
-        catch (IOException) { }
-    }
-
-    private static GateResponse Exchange(GateRequest request)
-    {
+        var request = new GateRequest { Op = GateSpool.OpUnlock, Pid = Process.GetCurrentProcess().Id, AppId = appId, Pin = pin };
+        if (groupIds != null)
+            foreach (string id in groupIds)
+                if (id != appId && request.GroupIds.Count < GateRequest.MaxGroupApps) request.GroupIds.Add(id);
         return GateSpool.Exchange(request);
     }
 
-    private static string Prompt(string appPath)
+    // The apps (this one included) that were unlocked before and sit locked again in this session, when there are two
+    // or more of them and all are still locked; null otherwise. Names are in the same order, this app first.
+    private static List<string> FindRelockedGroup(string appId, out List<string> names)
     {
-        Application.EnableVisualStyles();
-        using (var form = new GateForm(appPath))
+        names = null;
+        EnforcementData data = ReadEnforcement();
+        if (data == null) return null;
+        int session = Process.GetCurrentProcess().SessionId;
+        string sid = CurrentSid();
+        List<string> relocked = data.RelockedApps(session, sid);
+        if (!relocked.Contains(appId)) return null;
+        var ids = new List<string> { appId };
+        foreach (string id in relocked)
+            if (id != appId && data.FindApp(id) != null && !data.IsUnlocked(session, sid, id)) ids.Add(id);
+        if (ids.Count < 2) return null;
+        names = ids.Select(id =>
         {
-            DialogResult result = form.ShowDialog();
-            EnsureCursorVisible();
-            return result == DialogResult.OK ? form.PinText : null;
+            EnforcementApp app = data.FindApp(id);
+            if (app != null && !string.IsNullOrWhiteSpace(app.Name)) return app.Name;
+            return app == null ? id : System.IO.Path.GetFileNameWithoutExtension(app.Match);
+        }).ToList();
+        return ids;
+    }
+
+    // ---- the single PIN prompt per app and session ---------------------------------------------------
+
+    private static string PromptMutexName(string appId)
+    {
+        return @"Local\WAP.Prompt." + (string.IsNullOrEmpty(appId) ? "unknown" : appId);
+    }
+
+    private static string PromptProperty(string appId)
+    {
+        return "WAP.Prompt." + (string.IsNullOrEmpty(appId) ? "unknown" : appId);
+    }
+
+    private static bool IsPromptMutexFree(string appId)
+    {
+        using (var mutex = new Mutex(false, PromptMutexName(appId)))
+        {
+            bool acquired;
+            try { acquired = mutex.WaitOne(0); }
+            catch (AbandonedMutexException) { acquired = true; }
+            if (!acquired) return false;
+            try { return true; }
+            finally { mutex.ReleaseMutex(); }
         }
     }
 
-    private static void EnsureCursorVisible()
+    // Acquires Local\WAP.Prompt.<AppId> for every app this prompt covers (sorted to avoid deadlocks).
+    // If any app already has a prompt in this session, brings that prompt to front and returns Busy.
+    private static PromptOutcome RunPrompt(string appPath, IList<string> groupNames, IList<string> appIds,
+        bool treatAbsentAsUnlocked, Func<string, SubmitResult> onSubmit, out GateResponse response, out Exception error)
     {
-        for (int i = 0; i < 10 && IsCursorHidden(); i++)
-        {
-            ShowCursor(true);
-        }
+        response = null;
+        error = null;
+        List<string> sortedIds = appIds.Where(id => !string.IsNullOrEmpty(id))
+            .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToList();
+        if (sortedIds.Count == 0) sortedIds.Add("unknown");
 
-        SetCursor(LoadCursor(IntPtr.Zero, IdcArrow));
-
-        // Reset the latched "hide pointer while typing" state (fWinIni=0: persisted setting untouched).
-        bool vanishEnabled = false;
-        if (SystemParametersInfo(SpiGetMouseVanish, 0, ref vanishEnabled, 0) && vanishEnabled)
+        var held = new List<Mutex>(sortedIds.Count);
+        try
         {
-            try { SystemParametersInfo(SpiSetMouseVanish, 0, IntPtr.Zero, 0); }
-            finally { SystemParametersInfo(SpiSetMouseVanish, 0, new IntPtr(1), 0); }
-        }
-
-        // Two separate injections: one {+1,-1} batch nets to zero movement and may not wake the pointer.
-        var right = new Input[] { new Input { Type = InputMouse, Mi = new MouseInput { Dx = 2, Dy = 0, Flags = MouseEventfMove } } };
-        var left = new Input[] { new Input { Type = InputMouse, Mi = new MouseInput { Dx = -2, Dy = 0, Flags = MouseEventfMove } } };
-        int size = Marshal.SizeOf(typeof(Input));
-        if (SendInput(1, right, size) == 1)
-        {
-            System.Threading.Thread.Sleep(15);
-            SendInput(1, left, size);
-        }
-        else
-        {
-            ScreenPoint point;
-            if (GetCursorPos(out point))
+            foreach (string id in sortedIds)
             {
-                SetCursorPos(point.X + 1, point.Y);
-                System.Threading.Thread.Sleep(15);
-                SetCursorPos(point.X, point.Y);
+                var mutex = new Mutex(false, PromptMutexName(id));
+                bool owned;
+                try { owned = mutex.WaitOne(0); }
+                catch (AbandonedMutexException) { owned = true; }
+                if (!owned)
+                {
+                    mutex.Dispose();
+                    BringPromptToFront(id);
+                    return PromptOutcome.Busy;
+                }
+                held.Add(mutex);
+            }
+            return ShowPrompt(appPath, groupNames, sortedIds, treatAbsentAsUnlocked, onSubmit, out response, out error);
+        }
+        finally
+        {
+            for (int i = held.Count - 1; i >= 0; i--)
+            {
+                try { held[i].ReleaseMutex(); }
+                catch (ApplicationException) { }
+                held[i].Dispose();
             }
         }
     }
 
-    private static bool IsCursorHidden()
+    private static PromptOutcome ShowPrompt(string appPath, IList<string> groupNames, IList<string> appIds,
+        bool treatAbsentAsUnlocked, Func<string, SubmitResult> onSubmit, out GateResponse response, out Exception error)
     {
-        var cursorInfo = new CursorInfo
+        response = null;
+        error = null;
+        Application.EnableVisualStyles();
+        bool released = false;
+        bool seenLocked = treatAbsentAsUnlocked;
+        PromptOutcome outcome = PromptOutcome.Cancelled;
+        GateResponse capturedResponse = null;
+        Exception capturedError = null;
+
+        using (var form = new GateForm(appPath, groupNames))
+        using (var watcher = new System.Windows.Forms.Timer { Interval = 500 })
         {
-            Size = (uint)Marshal.SizeOf(typeof(CursorInfo)),
-        };
-        return GetCursorInfo(ref cursorInfo) && (cursorInfo.Flags & CursorShowing) == 0;
+            form.Shown += delegate
+            {
+                foreach (string id in appIds) SetProp(form.Handle, PromptProperty(id), new IntPtr(1));
+            };
+            form.FormClosing += delegate
+            {
+                foreach (string id in appIds) RemoveProp(form.Handle, PromptProperty(id));
+            };
+            // Closes the prompt by itself when the app(s) were unlocked some other way (another prompt, another route).
+            watcher.Tick += delegate
+            {
+                if (!IsStillLocked(appIds, ref seenLocked))
+                {
+                    released = true;
+                    watcher.Stop();
+                    form.Finish(DialogResult.Abort);
+                }
+            };
+            // Keep the PIN window open while verifying and waiting for the app window so Gate retains the
+            // foreground right until SetForegroundWindow succeeds on the app window (design section 8.2).
+            form.SubmitHandler = delegate(GateForm promptForm)
+            {
+                watcher.Stop();
+                string pin = promptForm.PinText;
+                if (string.IsNullOrWhiteSpace(pin))
+                {
+                    outcome = PromptOutcome.Cancelled;
+                    promptForm.Finish(DialogResult.Cancel);
+                    return;
+                }
+                promptForm.SetSubmitting(true);
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    SubmitResult submit = onSubmit(pin);
+                    try
+                    {
+                        promptForm.BeginInvoke(new MethodInvoker(delegate
+                        {
+                            capturedResponse = submit.Response;
+                            capturedError = submit.Error;
+                            if (submit.Approved)
+                            {
+                                if (submit.WindowToActivate != IntPtr.Zero)
+                                {
+                                    // Activate the app window BEFORE closing the PIN window so foreground right is not lost.
+                                    promptForm.TopMost = false;
+                                    bool activated = Activate(submit.WindowToActivate);
+                                    LogFocus("gate.focus", "stage=activated", "reason=" + submit.FocusReason, "ok=" + activated);
+                                }
+                                else
+                                {
+                                    LogFocus("gate.focus", "stage=nowindow", "reason=" + submit.FocusReason, "ok=False");
+                                }
+                                outcome = PromptOutcome.Approved;
+                                promptForm.Finish(DialogResult.OK);
+                            }
+                            else
+                            {
+                                outcome = PromptOutcome.Failed;
+                                promptForm.Finish(DialogResult.No);
+                            }
+                        }));
+                    }
+                    catch (ObjectDisposedException) { }
+                    catch (InvalidOperationException) { }
+                });
+            };
+            watcher.Start();
+            form.ShowDialog();
+            watcher.Stop();
+            response = capturedResponse;
+            error = capturedError;
+            if (released) return PromptOutcome.Released;
+            return outcome;
+        }
     }
+
+    // False when enforcement.txt says every one of the apps is unlocked in this session or no longer locked at all.
+    private static bool IsStillLocked(IList<string> appIds, ref bool seenLocked)
+    {
+        EnforcementData data = ReadEnforcement();
+        if (data == null) return true;
+        int session = Process.GetCurrentProcess().SessionId;
+        string sid = CurrentSid();
+        bool anyLocked = false;
+        foreach (string appId in appIds)
+        {
+            if (data.IsUnlocked(session, sid, appId)) continue;
+            if (data.FindApp(appId) != null)
+            {
+                seenLocked = true;
+                anyLocked = true;
+            }
+            // Absent only counts as "no longer locked" once the app has been seen locked (lock hours, lock removed).
+            else if (!seenLocked) anyLocked = true;
+        }
+        return anyLocked;
+    }
+
+    private static string currentSid;
+
+    private static string CurrentSid()
+    {
+        if (currentSid == null)
+        {
+            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+                currentSid = identity.User == null ? string.Empty : identity.User.Value;
+        }
+        return currentSid;
+    }
+
+    private static EnforcementData ReadEnforcement()
+    {
+        try
+        {
+            string file = WapPaths.EnforcementFile;
+            if (!File.Exists(file) || !WapSecurity.IsOwnedByServiceAccount(file)) return null;
+            return EnforcementData.Parse(File.ReadAllText(file, Encoding.UTF8));
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+        catch (FormatException) { return null; }
+    }
+
+    private static void BringPromptToFront(string appId)
+    {
+        string property = PromptProperty(appId);
+        EnumWindows(delegate(IntPtr window, IntPtr state)
+        {
+            if (GetProp(window, property) == IntPtr.Zero) return true;
+            Activate(window);
+            return false;
+        }, IntPtr.Zero);
+    }
+
+    // ---- foreground ------------------------------------------------------------------------------------
+
+    // Waits for a visible window of the app(s), checking every 100 ms up to timeoutMilliseconds.
+    private static IntPtr WaitForAppWindow(IList<string> appIds, string fallbackPath, int timeoutMilliseconds)
+    {
+        var resolver = new WindowResolver();
+        DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+        string primaryId = appIds != null && appIds.Count > 0 ? appIds[0] : null;
+        string fallbackId = string.IsNullOrEmpty(primaryId) ? "fallback" : primaryId;
+
+        while (true)
+        {
+            EnforcementData data = ReadEnforcement();
+            List<EnforcementApp> apps = data != null ? new List<EnforcementApp>(data.Apps) : new List<EnforcementApp>();
+            bool hasTarget = primaryId != null && apps.Any(a => string.Equals(a.Id, primaryId, StringComparison.Ordinal));
+            if (!hasTarget && !string.IsNullOrEmpty(fallbackPath))
+                apps.Add(new EnforcementApp { Id = fallbackId, Kind = EnforcementApp.KindWindow, Match = fallbackPath });
+
+            if (apps.Count > 0)
+            {
+                resolver.SetApps(apps);
+                IntPtr window = IntPtr.Zero;
+                if (!string.IsNullOrEmpty(primaryId)) window = resolver.FindVisibleWindow(primaryId);
+                if (window == IntPtr.Zero && appIds != null && appIds.Count > 1) window = resolver.FindVisibleWindow(appIds);
+                if (window == IntPtr.Zero && !hasTarget && !string.IsNullOrEmpty(fallbackPath))
+                    window = resolver.FindVisibleWindow(fallbackId);
+                if (window != IntPtr.Zero) return window;
+            }
+            if (DateTime.UtcNow >= deadline) return IntPtr.Zero;
+            Thread.Sleep(100);
+        }
+    }
+
+    // Used when no PIN prompt was shown (app was already unlocked).
+    private static void ActivateAppWindow(IList<string> appIds, string fallbackPath, int timeoutMilliseconds, string reason)
+    {
+        try
+        {
+            LogFocus("gate.focus", "stage=approved", "reason=" + reason);
+            IntPtr window = WaitForAppWindow(appIds, fallbackPath, timeoutMilliseconds);
+            if (window == IntPtr.Zero)
+            {
+                LogFocus("gate.focus", "stage=nowindow", "reason=" + reason, "ok=False");
+                return;
+            }
+            bool activated = Activate(window);
+            LogFocus("gate.focus", "stage=activated", "reason=" + reason, "ok=" + activated);
+        }
+        catch (Exception ex)
+        {
+            GateLog.Exception("gate.focus.failed", ex);
+        }
+    }
+
+    private static bool Activate(IntPtr window)
+    {
+        if (IsIconic(window)) ShowWindow(window, 9);
+        if (SetForegroundWindow(window)) return true;
+
+        // Refused: join the input of the current foreground thread and of the window's thread, then retry.
+        uint me = GetCurrentThreadId();
+        uint targetProcess, foregroundProcess;
+        uint target = GetWindowThreadProcessId(window, out targetProcess);
+        IntPtr foreground = GetForegroundWindow();
+        uint foregroundThread = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, out foregroundProcess);
+        bool attachedTarget = target != 0 && target != me && AttachThreadInput(me, target, true);
+        bool attachedForeground = foregroundThread != 0 && foregroundThread != me && foregroundThread != target &&
+            AttachThreadInput(me, foregroundThread, true);
+        try
+        {
+            BringWindowToTop(window);
+            bool ok = SetForegroundWindow(window);
+            SetFocus(window);
+            return ok;
+        }
+        finally
+        {
+            if (attachedTarget) AttachThreadInput(me, target, false);
+            if (attachedForeground) AttachThreadInput(me, foregroundThread, false);
+        }
+    }
+
+    private static void LogFocus(string key, params string[] fields)
+    {
+        string cursor = "unknown";
+        var info = new CursorInfo { Size = (uint)Marshal.SizeOf(typeof(CursorInfo)) };
+        if (GetCursorInfo(ref info)) cursor = "0x" + info.Flags.ToString("X");
+        string foregroundName = "none";
+        try
+        {
+            uint pid;
+            IntPtr foreground = GetForegroundWindow();
+            if (foreground != IntPtr.Zero && GetWindowThreadProcessId(foreground, out pid) != 0)
+                using (Process process = Process.GetProcessById((int)pid)) foregroundName = process.ProcessName;
+        }
+        catch (Exception) { }
+        GateLog.Info(key, fields.Concat(new[] { "cursorFlags=" + cursor, "foreground=" + foregroundName }).ToArray());
+    }
+
+    // ---- process start ---------------------------------------------------------------------------------
 
     private static void ShowError(string message)
     {
@@ -292,12 +714,11 @@ internal static class Gate
     [DllImport("kernel32.dll")]
     private static extern bool TerminateProcess(IntPtr process, uint code);
 
-    private const uint CursorShowing = 0x00000001;
-    private const uint SpiGetMouseVanish = 0x1020;
-    private const uint SpiSetMouseVanish = 0x1021;
-    private const uint InputMouse = 0;
-    private const uint MouseEventfMove = 0x0001;
-    private static readonly IntPtr IdcArrow = new IntPtr(32512);
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ScreenPoint
@@ -315,51 +736,44 @@ internal static class Gate
         public ScreenPoint ScreenPosition;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MouseInput
-    {
-        public int Dx;
-        public int Dy;
-        public uint MouseData;
-        public uint Flags;
-        public uint Time;
-        public IntPtr ExtraInfo;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Input
-    {
-        public uint Type;
-        public MouseInput Mi;
-    }
+    private delegate bool EnumProc(IntPtr window, IntPtr state);
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorInfo(ref CursorInfo cursorInfo);
 
     [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out ScreenPoint point);
+    private static extern bool EnumWindows(EnumProc callback, IntPtr state);
 
     [DllImport("user32.dll")]
-    private static extern bool SetCursorPos(int x, int y);
+    private static extern bool IsIconic(IntPtr window);
 
     [DllImport("user32.dll")]
-    private static extern bool SystemParametersInfo(uint action, uint param, ref bool value, uint flags);
+    private static extern bool ShowWindow(IntPtr window, int command);
 
     [DllImport("user32.dll")]
-    private static extern bool SystemParametersInfo(uint action, uint param, IntPtr value, uint flags);
+    private static extern bool SetForegroundWindow(IntPtr window);
 
     [DllImport("user32.dll")]
-    private static extern int ShowCursor(bool show);
+    private static extern bool BringWindowToTop(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint attach, uint attachTo, bool attached);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr LoadCursor(IntPtr instance, IntPtr cursorName);
+    private static extern bool SetProp(IntPtr window, string name, IntPtr data);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr SetCursor(IntPtr cursor);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetProp(IntPtr window, string name);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint SendInput(uint inputsCount, Input[] inputs, int size);
-
-    [DllImport("kernel32.dll")]
-    private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr RemoveProp(IntPtr window, string name);
 }

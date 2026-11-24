@@ -53,12 +53,37 @@ internal static class PolicyRules
             string.Equals(Path.GetExtension(app.Path), ".exe", StringComparison.OrdinalIgnoreCase);
     }
 
-    // A window-mode app (browser) that is a plain Win32 .exe can be unlocked per process with a PIN prompt.
+    // A window-mode app (browser or packaged app) is unlocked per app with a PIN prompt shown by the agent.
     internal static bool CanUseWindowUnlock(AppPolicy app)
     {
-        return app != null && !app.IsPackaged && IsWindowMode(app) && !string.IsNullOrWhiteSpace(app.Path) &&
-            Path.IsPathRooted(app.Path) &&
-            string.Equals(Path.GetExtension(app.Path), ".exe", StringComparison.OrdinalIgnoreCase);
+        return app != null && IsWindowMode(app);
+    }
+
+    // The locked app a process belongs to, by package family or exact executable path (never by hash).
+    internal static AppPolicy MatchLockedApp(PolicyDocument policy, string imagePath, string packageFamily)
+    {
+        return MatchApp(policy, imagePath, packageFamily, true);
+    }
+
+    // Same rules for every registered app, locked or not (the service also tracks apps that are currently open).
+    internal static AppPolicy MatchApp(PolicyDocument policy, string imagePath, string packageFamily, bool lockedOnly)
+    {
+        if (policy == null || policy.Apps == null) return null;
+        foreach (AppPolicy app in policy.Apps)
+        {
+            if (app == null || (lockedOnly && !app.Locked)) continue;
+            string match = app.IsPackaged ? app.PackageFamilyName : app.Path;
+            if (AppMatcher.Matches(app.IsPackaged, match, imagePath, packageFamily)) return app;
+        }
+        return null;
+    }
+
+    // Everything that decides whether an existing unlock is still valid: unlock time, lock hours, re-lock on exit.
+    internal static string SettingsKey(AppPolicy app)
+    {
+        int minutes = Math.Max(0, Math.Min(app.Launch.AllowedMinutes, 1440));
+        return minutes.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + app.Launch.LockStartMinute + "|" +
+            app.Launch.LockEndMinute + "|" + app.Launch.RelockOnExit;
     }
 
     internal static bool IsWithinLockHours(LaunchPolicy launch, DateTime localTime)

@@ -72,8 +72,10 @@ internal static class Program
                 case SessionChangeReason.SessionLock:
                 case SessionChangeReason.ConsoleDisconnect:
                 case SessionChangeReason.RemoteDisconnect:
-                case SessionChangeReason.SessionLogoff:
                     worker.RevokeLaunchGrants();
+                    break;
+                case SessionChangeReason.SessionLogoff:
+                    worker.RevokeSession(change.SessionId);
                     break;
                 case SessionChangeReason.SessionLogon:
                 case SessionChangeReason.SessionUnlock:

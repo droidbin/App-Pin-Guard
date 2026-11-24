@@ -13,7 +13,7 @@ internal sealed class GateSpoolServer : IDisposable
     private static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(1);
 
     private readonly PolicyHost policyHost;
-    private readonly GrantTable grants;
+    private readonly UnlockTable unlocks;
     private readonly string gatePath;
     private readonly object sync = new object();
     private readonly HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
@@ -23,10 +23,10 @@ internal sealed class GateSpoolServer : IDisposable
     private DateTime lastCleanup = DateTime.UtcNow;
     private volatile bool stopping;
 
-    internal GateSpoolServer(PolicyHost policyHost, GrantTable grants, string gatePath)
+    internal GateSpoolServer(PolicyHost policyHost, UnlockTable unlocks, string gatePath)
     {
         this.policyHost = policyHost;
-        this.grants = grants;
+        this.unlocks = unlocks;
         this.gatePath = gatePath;
     }
 
@@ -139,9 +139,10 @@ internal sealed class GateSpoolServer : IDisposable
         string result;
         int retryAfter = 0;
         string requesterSid = null;
+        string appId = null;
         try
         {
-            result = Process(request, owner, out requesterSid, out retryAfter);
+            result = Process(request, owner, out requesterSid, out retryAfter, out appId);
         }
         catch (Exception ex)
         {
@@ -151,13 +152,15 @@ internal sealed class GateSpoolServer : IDisposable
         // A request that failed the identity checks is still answered ("denied") to its file owner.
         string readerSid = requesterSid;
         if (readerSid == null && owner != null && !owner.Equals(WapSecurity.AdminsSid)) readerSid = owner.Value;
-        WriteResponse(request.Nonce, result, retryAfter, readerSid);
+        WriteResponse(request.Nonce, result, retryAfter, readerSid, appId);
     }
 
-    private string Process(GateRequest request, SecurityIdentifier fileOwner, out string requesterSid, out int retryAfter)
+    private string Process(GateRequest request, SecurityIdentifier fileOwner, out string requesterSid, out int retryAfter,
+        out string appId)
     {
         retryAfter = 0;
         requesterSid = null;
+        appId = null;
 
         // Identity of the caller: a running Gate.exe from the install folder, in a user session,
         // whose token user is the same person that created the request file.
@@ -180,37 +183,29 @@ internal sealed class GateSpoolServer : IDisposable
 
         PolicyState state = policyHost.Current;
         if (state == null) return GateSpool.ResultUnavailable;
-        string path = PolicyRules.NormalizePath(request.Path);
-        AppPolicy app = path.Length == 0 ? null : PolicyRules.FindLaunchAppByPath(state.Policy, path);
-        if (app == null || !app.Locked) return GateSpool.ResultDenied;
 
-        DateTime now = DateTime.UtcNow;
-        if (request.Op == GateSpool.OpUnlock)
+        // A launch-mode app is named by its path; a window-mode app (browser, packaged app) by its AppId.
+        AppPolicy app;
+        if (request.Op == GateSpool.OpUnlock) app = PolicyRules.FindById(state.Policy, request.AppId);
+        else
         {
-            // Gate was just approved for this window-mode app (browser) and now names the running process to show.
-            int target = request.Child;
-            long startTicks = NativeApi.GetStartTicks(target);
-            string targetImage = NativeApi.GetImagePath(target);
-            if (!PolicyRules.CanUseWindowUnlock(app) || startTicks == 0 || targetImage == null ||
-                !PolicyRules.PathsEqual(targetImage, app.Path) || NativeApi.GetSessionId(target) != session ||
-                !string.Equals(NativeApi.GetUserSid(target), userSid, StringComparison.OrdinalIgnoreCase) ||
-                !grants.IsApprovedGateChild(request.Pid, app.Id, now))
-                return GateSpool.ResultDenied;
-            grants.RegisterProcess(target, startTicks, app.Id);
-            ServiceLog.Info("gate.unlock", "app=" + app.Name, "pid=" + target);
-            policyHost.RequestApply();
-            return GateSpool.ResultApproved;
+            string path = PolicyRules.NormalizePath(request.Path);
+            app = path.Length == 0 ? null : PolicyRules.FindLaunchAppByPath(state.Policy, path);
         }
-
-        if (request.Op == GateSpool.OpTrack)
+        if (app == null || !app.Locked)
         {
-            bool tracked = grants.Track(app, userSid, session, request.Pid, request.Child, now);
-            return tracked ? GateSpool.ResultApproved : GateSpool.ResultDenied;
+            ServiceLog.Warn(request.Op == GateSpool.OpUnlock ? "gate.unlock" : "gate.authorize", "app=" + (app == null ? "unknown" : app.Name),
+                "result=denied", "session=" + session, "reason=not-locked");
+            return GateSpool.ResultDenied;
         }
+        appId = app.Id;
 
-        AuthResult result = grants.Authorize(state.Policy, state.Secrets, app, userSid, session, request.Pid,
-            request.Pin, now, out retryAfter);
-        ServiceLog.Info("gate.authorize", "app=" + app.Name, "result=" + result, "session=" + session);
+        AuthResult result = unlocks.Authorize(state.Policy, state.Secrets, app, userSid, session,
+            request.Pin, DateTime.UtcNow, request.GroupIds, out retryAfter);
+        ServiceLog.Info(request.Op == GateSpool.OpUnlock ? "gate.unlock" : "gate.authorize", "app=" + app.Name,
+            "result=" + result, "session=" + session, "group=" + request.GroupIds.Count);
+        // The agent learns about a new unlock from enforcement.txt.
+        if (result == AuthResult.Approved) policyHost.RequestApply();
         switch (result)
         {
             case AuthResult.Approved: return GateSpool.ResultApproved;
@@ -220,13 +215,13 @@ internal sealed class GateSpoolServer : IDisposable
         }
     }
 
-    private void WriteResponse(string nonce, string result, int retryAfter, string requesterSid)
+    private void WriteResponse(string nonce, string result, int retryAfter, string requesterSid, string appId)
     {
         string final = Path.Combine(WapPaths.ResponsesDir, nonce + GateSpool.ResponseExtension);
         string temporary = final + ".tmp";
         try
         {
-            var response = new GateResponse { Nonce = nonce, Result = result, RetryAfterSeconds = retryAfter };
+            var response = new GateResponse { Nonce = nonce, Result = result, RetryAfterSeconds = retryAfter, AppId = appId ?? string.Empty };
             using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
             {
                 byte[] bytes = Utf8.GetBytes(response.Serialize());

@@ -291,6 +291,8 @@ Mode=window(브라우저, 패키지 앱)는 감시기가 종료하지 않습니�
 
 ### 7.2 GrantTable
 
+> **→ `DESIGN-app-lock-redesign.md`로 대체됨.** 해제 단위가 PID에서 앱(`UnlockTable`)으로 바뀌었고 `GrantTable`, `track`은 삭제되었습니다. 아래는 이력으로만 남깁니다.
+
 기존 메모리 승인 로직(유효 시간, `RelockOnExit`, track 5초 창)을 유지합니다. 다음 세 가지만 추가합니다.
 
 - `track`으로 등록한 PID와 시작 시각의 쌍을 감시기가 조회할 수 있게 합니다.
@@ -313,6 +315,8 @@ Mode=window(브라우저, 패키지 앱)는 감시기가 종료하지 않습니�
 
 **에이전트 (`src/WindowAgent/Program.cs`)**
 
+> **창 판정, 승인 목록, PIN 창 요청 부분은 `DESIGN-app-lock-redesign.md`로 대체됨.** 에이전트는 `enforcement.txt` v2의 `A:`(잠긴 앱)와 `U:`(해제된 앱) 줄만 보고 창을 앱 단위로 판정합니다. 아래 항목 중 승인 PID(`G:`)와 `W/F/L` 줄 언급은 이력입니다.
+
 - 정책 원천은 `Runtime\enforcement.txt` 하나입니다. 소유자가 SYSTEM인지 검증합니다. 파이프 경로는 삭제합니다.
   - `Global\WAP.EnforcementChanged`를 기다리다 신호가 오면 다시 읽습니다. 2초 주기로도 다시 읽습니다.
 - 창 숨김 대상은 Mode=window 앱 전체와, Mode=launch 앱 가운데 `LockedAtUtc` 이전에 시작된 프로세스입니다. 승인된 PID는 제외합니다.
@@ -329,6 +333,8 @@ Mode=window(브라우저, 패키지 앱)는 감시기가 종료하지 않습니�
 - 반환 코드: 0=정지 이벤트, 2=중복 실행, 3=정책 파일 없음 30초 초과, 1=예외. 서비스는 이 코드를 로그에 남깁니다.
 
 ### 7.4 enforcement.txt 형식
+
+> **→ `DESIGN-app-lock-redesign.md` §6.1(`WAP-ENF 2`)로 대체됨.** 아래 v1 형식은 더 이상 읽히지 않습니다(헤더가 다르면 에이전트는 이전 상태를 유지합니다).
 
 ```
 WAP-ENF 1

@@ -56,6 +56,8 @@ internal sealed class AppStatus
     // applied-gate | applied-blocked | window-mode | conflict | error:<code> | none
     [DataMember] public string Rule { get; set; }
     [DataMember] public string LastBlockedUtc { get; set; }
+    // User sessions in which this locked app is currently unlocked ("in use").
+    [DataMember] public int UnlockedSessions { get; set; }
 }
 
 [DataContract]

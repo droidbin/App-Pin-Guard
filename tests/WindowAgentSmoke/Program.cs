@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
+using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -31,23 +31,57 @@ internal static class WindowAgentSmoke
             otherChild = Process.Start(copy, "--fixture");
             IntPtr protectedWindow = WaitForWindow(protectedChild);
             IntPtr otherWindow = WaitForWindow(otherChild);
-            var generation = Guid.NewGuid();
-            string policy = generation.ToString("N") + "\nP:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(source));
-            var guard = new WindowAgent(journal);
-            if (!guard.ApplyPolicy(policy, generation)) throw new InvalidOperationException("Valid policy not accepted.");
+
+            int session;
+            using (Process self = Process.GetCurrentProcess()) session = self.SessionId;
+            string sid;
+            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+                sid = identity.User == null ? string.Empty : identity.User.Value;
+            string appId = Guid.NewGuid().ToString("N");
+
+            var lockedData = new EnforcementData { Revision = 1 };
+            lockedData.Apps.Add(new EnforcementApp
+            {
+                Id = appId,
+                Kind = EnforcementApp.KindWindow,
+                Match = source,
+                Name = "Fixture",
+            });
+            string lockedText = lockedData.Serialize();
+
+            var guard = new WindowAgent(journal, session, sid);
+            guard.Apply(EnforcementData.Parse(lockedText));
             WaitUntil(() => { guard.Scan(); return !IsWindowVisible(protectedWindow); }, "Protected window did not hide.");
             if (!File.Exists(journal) || !IsWindowVisible(otherWindow))
                 throw new InvalidOperationException("Missing journal or matched a different path with the same name.");
 
-            var restarted = new WindowAgent(journal);
-            restarted.ApplyPolicy(policy, generation);
+            var restarted = new WindowAgent(journal, session, sid);
+            restarted.Apply(EnforcementData.Parse(lockedText));
             restarted.Scan();
             if (IsWindowVisible(protectedWindow)) throw new InvalidOperationException("Restart released locked window.");
-            if (restarted.ApplyPolicy(policy, Guid.NewGuid())) throw new InvalidOperationException("Wrong service generation accepted.");
-            restarted.ApplyPolicy(generation.ToString("N"), generation);
+
+            // Reject malformed enforcement format (non-v2).
+            bool rejected = false;
+            try { EnforcementData.Parse("WAP-ENF 1\nrev=1\n"); }
+            catch (FormatException) { rejected = true; }
+            if (!rejected) throw new InvalidOperationException("Non-v2 enforcement header was accepted.");
+
+            // Unlock entry for a different SID or different session must not restore this window.
+            var otherUserData = EnforcementData.Parse(lockedText);
+            otherUserData.Unlocks.Add(new EnforcementUnlock { Session = session, Sid = "S-1-5-21-0-0-0-9999", AppId = appId });
+            otherUserData.Unlocks.Add(new EnforcementUnlock { Session = session + 1, Sid = sid, AppId = appId });
+            restarted.Apply(EnforcementData.Parse(otherUserData.Serialize()));
+            restarted.Scan();
+            if (IsWindowVisible(protectedWindow))
+                throw new InvalidOperationException("Unlock for another user or session released the window.");
+
+            // Unlock entry matching both session and SID restores the window and retires the journal.
+            var unlockedData = EnforcementData.Parse(lockedText);
+            unlockedData.Unlocks.Add(new EnforcementUnlock { Session = session, Sid = sid, AppId = appId });
+            restarted.Apply(EnforcementData.Parse(unlockedData.Serialize()));
             WaitUntil(() => { restarted.Scan(); return IsWindowVisible(protectedWindow) && !File.Exists(journal); },
                 "Unlock did not restore the window and retire the journal entry.");
-            Console.WriteLine("PASS: protected window hide, exact-path isolation, journal adoption, policy generation, and unlock restore.");
+            Console.WriteLine("PASS: v2 enforcement hide, exact-path isolation, journal adoption, session/SID scoping, and unlock restore.");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
@@ -55,9 +89,9 @@ internal static class WindowAgentSmoke
         {
             Stop(protectedChild);
             Stop(otherChild);
-            File.Delete(journal);
-            File.Delete(copy);
-            Directory.Delete(root);
+            if (File.Exists(journal)) File.Delete(journal);
+            if (File.Exists(copy)) File.Delete(copy);
+            if (Directory.Exists(root)) Directory.Delete(root);
         }
     }
 

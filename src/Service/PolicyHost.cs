@@ -32,7 +32,7 @@ internal sealed class PolicyHost : IDisposable
     private volatile bool stopping;
 
     internal RuleEngine Rules;
-    internal GrantTable Grants;
+    internal UnlockTable Unlocks;
     internal ProcessWatcher Watcher;
 
     internal PolicyHost(StatusWriter status)
@@ -163,8 +163,16 @@ internal sealed class PolicyHost : IDisposable
 
             List<AppPolicy> newlyLocked = FindNewlyLocked(previous == null ? null : previous.Policy, policy);
             Dictionary<string, string> rules = Rules.Sync(policy);
-            Grants.Prune(policy, secrets);
+            if (Unlocks.Prune(policy, secrets)) ServiceLog.Info("unlock.pruned", "revision=" + policy.Revision);
             Watcher.OnPolicyChanged(policy, newlyLocked);
+            if (newlyLocked.Count > 0)
+            {
+                // Apps that were open when they got locked are offered together in one PIN prompt.
+                List<ProcessWatcher.RunningApp> running = Watcher.RunningApps();
+                foreach (AppPolicy app in newlyLocked)
+                    foreach (ProcessWatcher.RunningApp open in running)
+                        if (open.AppId == app.Id) Unlocks.AddRelockedRunning(app, open.Sid, open.Session, DateTime.UtcNow);
+            }
             WriteEnforcement(policy);
 
             bool gateAvailable = Rules.GateAvailable;
@@ -174,6 +182,7 @@ internal sealed class PolicyHost : IDisposable
                 Name = app.Name,
                 Mode = PolicyRules.GetMode(app),
                 Rule = rules.ContainsKey(app.Id) ? rules[app.Id] : StatusDocument.RuleNone,
+                UnlockedSessions = Unlocks.CountSessions(app.Id),
             }).ToList();
             status.SetApps(apps);
             status.Update(delegate(StatusDocument doc)
@@ -206,25 +215,23 @@ internal sealed class PolicyHost : IDisposable
     private void WriteEnforcement(PolicyDocument policy)
     {
         var data = new EnforcementData { Revision = policy.Revision };
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var families = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var before = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         DateTime localNow = DateTime.Now;
 
         foreach (AppPolicy app in policy.Apps)
         {
-            if (!app.Locked) continue;
+            if (!app.Locked || string.IsNullOrEmpty(app.Id)) continue;
             if (PolicyRules.IsWindowMode(app))
             {
                 if (app.IsPackaged)
                 {
-                    if (!string.IsNullOrWhiteSpace(app.PackageFamilyName) && families.Add(app.PackageFamilyName))
-                        data.HidePackages.Add(app.PackageFamilyName);
+                    if (!string.IsNullOrWhiteSpace(app.PackageFamilyName))
+                        data.Apps.Add(new EnforcementApp { Id = app.Id, Kind = EnforcementApp.KindPackage, Match = app.PackageFamilyName, Name = app.Name });
                 }
                 else
                 {
                     string path = PolicyRules.NormalizePath(app.Path);
-                    if (path.Length > 0 && paths.Add(path)) data.HidePaths.Add(path);
+                    if (path.Length > 0)
+                        data.Apps.Add(new EnforcementApp { Id = app.Id, Kind = EnforcementApp.KindWindow, Match = path, Name = app.Name });
                 }
                 continue;
             }
@@ -234,12 +241,13 @@ internal sealed class PolicyHost : IDisposable
             if (!PolicyRules.IsWithinLockHours(app.Launch, localNow)) continue;
             string launchPath = PolicyRules.NormalizePath(app.Path);
             DateTime lockedAt = PolicyRules.ParseUtc(app.LockedAtUtc);
-            if (launchPath.Length == 0 || lockedAt == DateTime.MinValue || !before.Add(launchPath)) continue;
-            data.HideBefore.Add(new KeyValuePair<string, long>(launchPath, lockedAt.Ticks));
+            if (launchPath.Length == 0 || lockedAt == DateTime.MinValue) continue;
+            data.Apps.Add(new EnforcementApp { Id = app.Id, Kind = EnforcementApp.KindLaunch, Match = launchPath, LockedAtTicks = lockedAt.Ticks, Name = app.Name });
         }
 
         data.Close.AddRange(Watcher.CloseTargets(DateTime.UtcNow));
-        data.Granted.AddRange(Grants.GrantedProcesses());
+        data.Unlocks.AddRange(Unlocks.Snapshot(DateTime.UtcNow));
+        data.Relocked.AddRange(Unlocks.RelockedSnapshot());
 
         string text = data.Serialize();
         if (text == lastEnforcement && File.Exists(WapPaths.EnforcementFile)) return;
