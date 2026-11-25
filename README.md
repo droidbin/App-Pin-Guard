@@ -9,6 +9,9 @@ Windows 앱 실행을 PIN으로 잠그는 데스크톱 도구입니다. 보호 �
 - 기술 스택: Avalonia 11 + .NET 8 (self-contained)
 - 최신 공개 버전: **2.0.1** ([릴리즈 노트](https://github.com/droidbin/App-Pin-Guard/releases/tag/v2.0.1))
 - 이전 이름: Windows App Protector (1.x 안정판, 2.0부터 App PIN Guard로 변경)
+- 라이선스: [MIT](LICENSE) · [코드 서명 정책](CODE_SIGNING_POLICY.md) · [개인정보 처리방침](PRIVACY.md)
+
+> **English:** App PIN Guard is an open source Windows desktop tool that locks apps you choose behind a PIN. A Windows service, a per-session window agent and a PIN prompt keep protected apps closed or hidden until the PIN is entered. See the [code signing policy](CODE_SIGNING_POLICY.md) and [privacy policy](PRIVACY.md).
 
 ## 설치
 
@@ -108,6 +111,16 @@ dist\installer\Setup.exe
 - 작업은 최신 안정판에서 분기한 `codex/` 또는 `beta/` 브랜치에서 진행합니다.
 - 변경 사항은 Windows 빌드와 단위 테스트(`tests/UnitTests`)로 검증하고, 베타 버전 식별자와 검증 결과를 기록합니다.
 - 검증 전에는 안정판 태그, GitHub Release, 설치 파일을 게시하지 않습니다.
+
+## Code signing policy
+
+현재 배포본은 코드 서명이 없습니다. SignPath Foundation 서명을 신청 준비 중이며, 서명 대상·담당자·시스템 변경 내역은 [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)를 참고하세요.
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) (applies once the application is accepted).
+
+## 라이선스
+
+[MIT License](LICENSE). 함께 배포되는 오픈소스 구성 요소는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 정리되어 있습니다.
 
 ## 제거
 

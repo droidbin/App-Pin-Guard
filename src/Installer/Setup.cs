@@ -24,6 +24,8 @@ internal static class Setup
     private const uint MessageBoxInformation = 0x00000040;
     private const uint MessageBoxError = 0x00000010;
     private const uint MessageBoxQuestionYesNo = 0x00000024;
+    // Yes/No, warning icon, brought to the foreground.
+    private const uint MessageBoxConfirmInstall = 0x00010034;
 
     private static int Main(string[] args)
     {
@@ -39,6 +41,12 @@ internal static class Setup
             string programFilesDir = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             string installDir = ResolveInstallDirectory(args, programFilesDir);
             string dataDir = WapPaths.Root;
+
+            // Nothing on the system changes before the user has seen what will change and agreed.
+            if (!ConfirmInstall(installDir))
+            {
+                return 0;
+            }
 
             // Validate and unpack the new payload before removing a working installation.
             stagingDir = Path.Combine(Path.GetTempPath(), "WindowsAppProtector.Setup." + Guid.NewGuid().ToString("N"));
@@ -470,6 +478,21 @@ internal static class Setup
         {
             return bytes.Length;
         }
+    }
+
+    private static bool ConfirmInstall(string installDir)
+    {
+        string text =
+            ProductBrand.Name + " " + AppVersion + " 을(를) 설치합니다.\n\n" +
+            "설치 위치:\n" + installDir + "\n\n" +
+            "다음 시스템 변경이 이루어집니다.\n" +
+            "• 실행 중인 이전 버전을 종료하고 제거 (PIN·설정·앱 목록은 보존)\n" +
+            "• 자동 시작되는 Windows 서비스 등록\n" +
+            "• 보호 목록에 넣은 앱의 실행을 제어하는 레지스트리 규칙(IFEO) 관리\n" +
+            "• 시작 메뉴 바로가기와 앱 제거 목록 등록\n\n" +
+            "Windows 설정의 앱 목록에서 언제든 제거할 수 있습니다.\n" +
+            "계속하시겠습니까?";
+        return MessageBoxW(IntPtr.Zero, text, ProductBrand.Name, MessageBoxConfirmInstall) == DialogResultYes;
     }
 
     private static bool AskCreateShortcuts()

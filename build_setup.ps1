@@ -107,6 +107,26 @@ if (!(Test-Path $csc)) {
     throw "csc.exe not found: $csc"
 }
 
+# Every signed binary carries the same product name and product version (VERSION).
+$numericVersion = ($appVersion -split '-')[0] + ".0"
+function New-VersionSource([string]$title) {
+    $path = Join-Path $buildDir ("AssemblyInfo." + ($title -replace '[^A-Za-z]', '') + ".cs")
+    Set-Content -LiteralPath $path -Encoding UTF8 -Value @(
+        "using System.Reflection;",
+        "[assembly: AssemblyTitle(`"$title`")]",
+        "[assembly: AssemblyProduct(`"App PIN Guard`")]",
+        "[assembly: AssemblyCopyright(`"Copyright (c) 2026 LEE HYEONGBIN. MIT License.`")]",
+        "[assembly: AssemblyVersion(`"$numericVersion`")]",
+        "[assembly: AssemblyFileVersion(`"$numericVersion`")]",
+        "[assembly: AssemblyInformationalVersion(`"$appVersion`")]"
+    )
+    return $path
+}
+$serviceSources += New-VersionSource "App PIN Guard Service"
+$gateVersionSource = New-VersionSource "App PIN Guard Gate"
+$agentVersionSource = New-VersionSource "App PIN Guard Window Agent"
+$setupVersionSource = New-VersionSource "App PIN Guard Setup"
+
 & $csc /nologo /codepage:65001 /target:exe /optimize+ /warnaserror+ /reference:System.ServiceProcess.dll /reference:System.Runtime.Serialization.dll /reference:System.Management.dll /out:$serviceExe $serviceSources
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
@@ -115,7 +135,7 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item -Path (Join-Path $payloadSource "*") -Destination $payloadDir -Recurse -Force
 Copy-Item -LiteralPath $serviceExe -Destination $payloadDir -Force
 $gateExe = Join-Path $payloadDir "WindowsAppProtector.Gate.exe"
-& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /warnaserror+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Runtime.Serialization.dll /out:$gateExe $gateSource $gateThemeSource $gateFormSource $gateShared
+& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /win32manifest:$gateManifest /win32icon:$icon /warnaserror+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Runtime.Serialization.dll /out:$gateExe $gateSource $gateThemeSource $gateFormSource $gateShared $gateVersionSource
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
@@ -127,15 +147,19 @@ foreach ($fontName in @("Pretendard-Regular.otf", "Pretendard-SemiBold.otf")) {
     Copy-Item -LiteralPath $fontSource -Destination (Join-Path $payloadDir $fontName) -Force
 }
 $agentExe = Join-Path $payloadDir "WindowsAppProtector.WindowAgent.exe"
-& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /warnaserror+ /win32manifest:$gateManifest /win32icon:$icon /reference:System.Runtime.Serialization.dll /out:$agentExe $agentSource $agentShared
+& $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /warnaserror+ /win32manifest:$gateManifest /win32icon:$icon /reference:System.Runtime.Serialization.dll /out:$agentExe $agentSource $agentShared $agentVersionSource
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 $payloadAssetsDir = Join-Path $payloadDir "Assets"
 New-Item -ItemType Directory -Path $payloadAssetsDir -Force | Out-Null
 Copy-Item -LiteralPath $icon -Destination (Join-Path $payloadAssetsDir "AppIcon.ico") -Force
+foreach ($legalFile in @("LICENSE", "THIRD-PARTY-NOTICES.md", "PRIVACY.md")) {
+    Copy-Item -LiteralPath (Join-Path $root $legalFile) -Destination $payloadDir -Force
+}
+Copy-Item -LiteralPath (Join-Path $root "licenses") -Destination $payloadDir -Recurse -Force
 
-& $csc /nologo /codepage:65001 /target:winexe /optimize+ /warnaserror+ /win32manifest:$manifest /win32icon:$icon /reference:System.IO.Compression.FileSystem.dll /out:$setupExe $setupSource $setupShared
+& $csc /nologo /codepage:65001 /target:winexe /optimize+ /warnaserror+ /win32manifest:$manifest /win32icon:$icon /reference:System.IO.Compression.FileSystem.dll /out:$setupExe $setupSource $setupShared $setupVersionSource
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
