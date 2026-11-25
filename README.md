@@ -7,7 +7,7 @@
 Windows 앱 실행을 PIN으로 잠그는 데스크톱 도구입니다. 보호 목록에 등록한 `.exe` 앱을 Windows IFEO(Image File Execution Options) 규칙과 창 감시로 차단하고, PIN을 맞힌 앱만 열 수 있게 합니다.
 
 - 기술 스택: Avalonia 11 + .NET 8 (self-contained)
-- 최신 공개 버전: **2.0.1** ([릴리즈 노트](https://github.com/droidbin/App-Pin-Guard/releases/tag/v2.0.1))
+- 최신 공개 버전: **2.0.2** ([릴리즈 노트](https://github.com/droidbin/App-Pin-Guard/releases/tag/v2.0.2))
 - 이전 이름: Windows App Protector (1.x 안정판, 2.0부터 App PIN Guard로 변경)
 - 라이선스: [MIT](LICENSE) · [코드 서명 정책](CODE_SIGNING_POLICY.md) · [개인정보 처리방침](PRIVACY.md)
 
